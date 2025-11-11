@@ -120,6 +120,8 @@ GROQ_EMBEDDING_MODEL=\"llama-3.1-8b-instant\"
 
 ## 🔐 Environment Variables Setup
 
+⚠️ **SECURITY WARNING**: Never commit real API keys to git! Always use placeholder values in documentation.
+
 ### Upstash Vector Database
 
 1. Create account at [upstash.com](https://upstash.com)
