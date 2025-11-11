@@ -11,7 +11,7 @@ import { generateResponse } from "./groq-client"
  * Creates consistent 1024-dimensional vectors using deterministic hashing
  * Required for Upstash Vector indexes that need dense vectors
  */
-function generateEmbedding(text: string): number[] {
+export function generateEmbedding(text: string): number[] {
   const dimension = 1024 // Standard dimension for most embedding models
   const vector: number[] = []
   
@@ -121,13 +121,18 @@ export async function queryVectorDatabase(question: string, topK = 3): Promise<V
   const url = process.env.UPSTASH_VECTOR_REST_URL
 
   if (!token || !url) {
-    throw new Error("Missing Upstash Vector configuration")
+    console.error('Missing Upstash Vector environment variables:', {
+      hasToken: !!token,
+      hasUrl: !!url,
+      nodeEnv: process.env.NODE_ENV
+    })
+    throw new Error("Upstash Vector database configuration is missing. Please check environment variables.")
   }
 
   try {
     // Generate dense vector embedding from the question text
     const queryVector = generateEmbedding(question)
-    console.log(`Generated ${queryVector.length}D vector for query`)
+    console.log(`Generated ${queryVector.length}D vector for query: "${question}"`)
     
     // Query using dense vector (required by this index)
     const response = await fetch(`${url}/query`, {
@@ -145,6 +150,12 @@ export async function queryVectorDatabase(question: string, topK = 3): Promise<V
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "")
+      console.error('Upstash Vector API error:', {
+        status: response.status,
+        statusText: response.statusText,
+        url: url,
+        error: errText
+      })
       throw new Error(`Vector DB error: ${response.status} ${response.statusText}${errText ? ` - ${errText}` : ""}`)
     }
 

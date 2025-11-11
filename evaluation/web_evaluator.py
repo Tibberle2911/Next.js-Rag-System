@@ -31,9 +31,10 @@ except ImportError as e:
 class WebRAGEvaluator:
     """Streamlined RAG evaluator for web interface"""
     
-    def __init__(self, groq_api_key: str, rag_endpoint: str = "http://localhost:3000/api/chat"):
+    def __init__(self, groq_api_key: str, rag_endpoint: str = "http://localhost:3000/api/chat", rag_mode: str = "basic"):
         self.groq_api_key = groq_api_key
         self.rag_endpoint = rag_endpoint
+        self.rag_mode = rag_mode  # 'basic' or 'advanced'
         self.evaluator = RAGEvaluator(groq_api_key)
         
     def send_progress(self, progress: float, status: str):
@@ -92,10 +93,14 @@ class WebRAGEvaluator:
         else:
             return data
     
-    async def run_web_evaluation(self, category: str = None) -> bool:
+    async def run_web_evaluation(self, category: str = None, rag_mode: str = None) -> bool:
         """Run evaluation and stream results to web interface"""
         try:
-            self.send_progress(5, "Creating test dataset...")
+            # Update RAG mode if provided
+            if rag_mode:
+                self.rag_mode = rag_mode
+                
+            self.send_progress(5, f"Creating test dataset (RAG mode: {self.rag_mode})...")
             
             # Create test cases filtered by category if specified
             if category:
@@ -113,29 +118,38 @@ class WebRAGEvaluator:
             for i, test_case in enumerate(test_cases):
                 # First run
                 progress = 10 + ((i * 2) / total_runs) * 40  # 10% to 50%
-                self.send_progress(progress, f"Querying RAG system: {test_case.category} question {i+1}/{len(test_cases)} (run 1)")
+                self.send_progress(progress, f"Querying RAG system ({self.rag_mode}): {test_case.category} question {i+1}/{len(test_cases)} (run 1)")
                 
                 try:
-                    result1 = await self.evaluator.query_rag_system(test_case.question)
+                    result1 = await self.evaluator.query_rag_system(test_case.question, rag_mode=self.rag_mode)
                     result1['run_number'] = 1
                     result1['test_case_index'] = i
+                    result1['rag_mode'] = self.rag_mode
                     rag_results.append(result1)
                 except Exception as e:
                     self.send_error(f"Failed to query RAG system for question {i+1} (run 1): {str(e)}")
                     return False
                 
+                # Add delay between first and second run to prevent rate limiting
+                await asyncio.sleep(4.0)
+                
                 # Second run
                 progress = 10 + ((i * 2 + 1) / total_runs) * 40
-                self.send_progress(progress, f"Querying RAG system: {test_case.category} question {i+1}/{len(test_cases)} (run 2)")
+                self.send_progress(progress, f"Querying RAG system ({self.rag_mode}): {test_case.category} question {i+1}/{len(test_cases)} (run 2)")
                 
                 try:
-                    result2 = await self.evaluator.query_rag_system(test_case.question)
+                    result2 = await self.evaluator.query_rag_system(test_case.question, rag_mode=self.rag_mode)
                     result2['run_number'] = 2
                     result2['test_case_index'] = i
+                    result2['rag_mode'] = self.rag_mode
                     rag_results.append(result2)
                 except Exception as e:
                     self.send_error(f"Failed to query RAG system for question {i+1} (run 2): {str(e)}")
                     return False
+                
+                # Add delay between test cases to prevent rate limiting
+                if i < len(test_cases) - 1:  # Don't wait after the last test case
+                    await asyncio.sleep(4.0)
             
             self.send_progress(50, "Running GROQ-based evaluation...")
             
@@ -182,6 +196,7 @@ class WebRAGEvaluator:
                         "difficulty": test_case.difficulty,
                         "generated_answer": rag_result["answer"],
                         "response_time": rag_result["response_time"],
+                        "rag_mode": rag_result.get("rag_mode", self.rag_mode),
                         "test_case_index": rag_result.get("test_case_index", i // 2),  # Which test case (0-4)
                         "run_number": rag_result.get("run_number", (i % 2) + 1),     # Which run (1 or 2)
                         "faithfulness": faithfulness_score,
@@ -285,16 +300,20 @@ async def main():
             print("ERROR:RAG evaluator not available")
             return
         
-        # Get category from command line argument
+        # Get parameters from command line arguments
         category = None
+        rag_mode = "basic"  # default to basic
+        
         if len(sys.argv) > 1:
             category = sys.argv[1]
+        if len(sys.argv) > 2:
+            rag_mode = sys.argv[2]
         
         # Initialize web evaluator
-        web_evaluator = WebRAGEvaluator(groq_api_key)
+        web_evaluator = WebRAGEvaluator(groq_api_key, rag_mode=rag_mode)
         
-        # Run evaluation with optional category filter
-        success = await web_evaluator.run_web_evaluation(category)
+        # Run evaluation with optional category filter and RAG mode
+        success = await web_evaluator.run_web_evaluation(category, rag_mode)
         
         if not success:
             print("ERROR:Evaluation completed with errors")

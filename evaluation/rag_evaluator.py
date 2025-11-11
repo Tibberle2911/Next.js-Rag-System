@@ -325,21 +325,36 @@ class RAGEvaluator:
         """Get list of available test case categories"""
         return ["personal", "experience", "skills", "projects", "education", "behaviour"]
     
-    async def query_rag_system(self, question: str) -> Dict[str, Any]:
-        """Query the RAG system and measure performance"""
-        # This would interface with your actual RAG system
-        # For now, simulating the call to your TypeScript RAG system
+    async def query_rag_system(self, question: str, rag_mode: str = "basic") -> Dict[str, Any]:
+        """Query the RAG system and measure performance with mode selection"""
+        # This interfaces with the actual RAG system with mode support
         
         start_time = time.time()
         
-        # Simulate HTTP call to your Next.js RAG endpoint
+        # Simulate HTTP call to your Next.js RAG endpoint with mode parameter
         import requests
         
         try:
+            # Prepare request payload with RAG mode
+            payload = {
+                "message": question,
+                "mode": rag_mode,  # 'basic' or 'advanced'
+            }
+            
+            # If advanced mode, add default configuration
+            if rag_mode == "advanced":
+                payload["advancedConfig"] = {
+                    "useMultiQuery": True,
+                    "useRagFusion": True,
+                    "useDecomposition": False,
+                    "useStepBack": False,
+                    "useHyde": False
+                }
+            
             response = requests.post(
                 "http://localhost:3000/api/chat",  # Your RAG endpoint
-                json={"message": question},
-                timeout=30
+                json=payload,
+                timeout=45 if rag_mode == "advanced" else 30  # Longer timeout for advanced processing
             )
             
             if response.status_code == 200:
@@ -347,21 +362,35 @@ class RAGEvaluator:
                 answer = data.get("message", "")
                 sources = data.get("sources", [])
                 contexts = [source.get("content", "") for source in sources]
+                
+                # Extract advanced RAG metadata if available
+                metadata = data.get("metadata", {})
+                techniques_used = metadata.get("techniquesUsed", [])
+                
             else:
                 answer = f"Error: {response.status_code}"
                 contexts = []
+                techniques_used = []
                 
         except Exception as e:
             answer = f"Connection error: {str(e)}"
             contexts = []
+            techniques_used = []
         
         response_time = time.time() - start_time
         
-        return {
+        result = {
             "answer": answer,
             "contexts": contexts,
-            "response_time": response_time
+            "response_time": response_time,
+            "rag_mode": rag_mode
         }
+        
+        # Add advanced metadata if available
+        if rag_mode == "advanced" and techniques_used:
+            result["techniques_used"] = techniques_used
+        
+        return result
     
     async def evaluate_with_ragas(self, test_cases: List[RAGTestCase], rag_results: List[Dict]) -> List[Dict[str, float]]:
         """Evaluate RAG system using RAGAS metrics - returns individual results for each test case"""
@@ -403,7 +432,7 @@ class RAGEvaluator:
         print("🤖 Running GROQ-based evaluation...")
         
         # Add initial delay to avoid hitting rate limits immediately
-        await asyncio.sleep(3.0)
+        await asyncio.sleep(8.0)
         
         individual_results = []
         
@@ -464,7 +493,7 @@ Provide realistic scores - most should be between 0.3-0.9. Return ONLY this JSON
                         error_msg = str(api_error)
                         if '429' in error_msg or 'rate_limit_exceeded' in error_msg:
                             retry_count += 1
-                            wait_time = 15 + (retry_count * 10)  # 15s, 25s, 35s
+                            wait_time = 25 + (retry_count * 15)  # 25s, 40s, 55s
                             print(f"    ⏳ Rate limit hit for question {i+1}, waiting {wait_time}s (attempt {retry_count}/{max_retries})")
                             await asyncio.sleep(wait_time)
                             if retry_count >= max_retries:
@@ -561,8 +590,8 @@ Provide realistic scores - most should be between 0.3-0.9. Return ONLY this JSON
             
             individual_results.append(result)
             
-            # Longer delay to avoid rate limits (increased from 0.5s to 2s)
-            await asyncio.sleep(2.0)
+            # Much longer delay to avoid rate limits (increased to 6s)
+            await asyncio.sleep(6.0)
         
         print(f"🎯 GROQ evaluation complete - {len(individual_results)} individual results generated")
         return individual_results
@@ -655,6 +684,10 @@ Provide realistic scores - most should be between 0.3-0.9. Return ONLY this JSON
             print(f"  Testing {i+1}/{len(test_cases)}: {test_case.category}")
             result = await self.query_rag_system(test_case.question)
             rag_results.append(result)
+            
+            # Add delay between RAG queries to prevent rate limiting
+            if i < len(test_cases) - 1:  # Don't wait after the last query
+                await asyncio.sleep(3.0)
         
         # Evaluate with RAGAS
         print("📊 Running RAGAS evaluation...")

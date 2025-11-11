@@ -11,7 +11,8 @@ export function getGroqClient(): Groq {
   if (!groqClient) {
     const apiKey = process.env.GROQ_API_KEY
     if (!apiKey) {
-      throw new Error("GROQ_API_KEY not configured")
+      console.error('GROQ_API_KEY environment variable is not set')
+      throw new Error("GROQ_API_KEY not configured. Please add your Groq API key to environment variables.")
     }
     groqClient = new Groq({ apiKey })
   }
@@ -73,7 +74,7 @@ export interface GenerateResponseOptions {
 }
 
 /**
- * Generate response using Groq LLM
+ * Generate response using Groq LLM with rate limiting
  */
 export async function generateResponse(options: GenerateResponseOptions): Promise<string> {
   const client = getGroqClient()
@@ -102,27 +103,55 @@ Question: ${options.question}
 
 Provide a helpful, professional response:`
 
-  try {
-    const completion = await client.chat.completions.create({
-      model: chatModel,
-      messages: [
-        {
-          role: "system",
-          content: systemLines.join(" "),
-        },
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-      temperature: 0.7,
-      max_tokens: 750,
-    })
+  // Rate limiting with retry logic
+  const maxRetries = 3
+  const baseDelay = 5000 // 5 seconds base delay
 
-    const responseText = completion.choices[0].message.content || ""
-    return formatResponse(responseText)
-  } catch (error) {
-    console.error("Groq API error:", error)
-    throw error
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      // Add delay before each attempt (except the first)
+      if (attempt > 0) {
+        const delayTime = baseDelay * Math.pow(2, attempt - 1) // Exponential backoff
+        console.log(`⏳ Rate limit retry ${attempt}/${maxRetries}, waiting ${delayTime}ms...`)
+        await new Promise(resolve => setTimeout(resolve, delayTime))
+      }
+
+      const completion = await client.chat.completions.create({
+        model: chatModel,
+        messages: [
+          {
+            role: "system",
+            content: systemLines.join(" "),
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 750,
+      })
+
+      const responseText = completion.choices[0].message.content || ""
+      return formatResponse(responseText)
+      
+    } catch (error: any) {
+      console.error(`Groq API error (attempt ${attempt + 1}):`, error)
+      
+      // Check if it's a rate limit error
+      const isRateLimit = error?.message?.includes('429') || 
+                         error?.status === 429 || 
+                         error?.message?.includes('rate_limit_exceeded')
+      
+      if (isRateLimit && attempt < maxRetries - 1) {
+        console.log(`🔄 Rate limit detected, retrying in ${baseDelay * Math.pow(2, attempt)}ms...`)
+        continue // Retry the loop
+      } else {
+        // Not a rate limit error or max retries exceeded
+        throw error
+      }
+    }
   }
+
+  throw new Error(`Failed after ${maxRetries} attempts due to rate limiting`)
 }

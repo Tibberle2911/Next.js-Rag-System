@@ -6,13 +6,15 @@ import path from 'path'
 export async function POST(request: NextRequest) {
   const encoder = new TextEncoder()
   
-  // Parse request body to get category
+  // Parse request body to get category and RAG mode
   let category = ''
+  let ragMode = 'basic'
   try {
     const body = await request.json()
     category = body.category || ''
+    ragMode = body.ragMode || 'basic'
   } catch (error) {
-    // If no body or invalid JSON, proceed without category
+    // If no body or invalid JSON, proceed with defaults
   }
   
   const stream = new ReadableStream({
@@ -21,14 +23,17 @@ export async function POST(request: NextRequest) {
       controller.enqueue(encoder.encode(JSON.stringify({
         type: 'progress',
         progress: 0,
-        status: 'Starting evaluation process...'
+        status: `Starting evaluation process (${ragMode} RAG mode)...`
       }) + '\n'))
 
-      // Create Python process for evaluation with category parameter
+      // Create Python process for evaluation with category and RAG mode parameters
       const evaluationScript = path.join(process.cwd(), 'evaluation', 'web_evaluator.py')
       const pythonArgs = [evaluationScript]
       if (category) {
         pythonArgs.push(category)
+      }
+      if (ragMode) {
+        pythonArgs.push(ragMode)
       }
       
       const pythonProcess = spawn('python', pythonArgs, {

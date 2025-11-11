@@ -1,0 +1,47 @@
+{
+  "buildCommand": "pnpm run build",
+  "devCommand": "pnpm run dev",
+  "installCommand": "pnpm install",
+  "framework": "nextjs",
+  "regions": ["iad1"],
+  "functions": {
+    "app/api/[transport]/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/chat/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/evaluation/run/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/mcp/route.ts": {
+      "maxDuration": 30
+    }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, PUT, DELETE, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, Authorization"
+        }
+      ]
+    }
+  ],
+  "env": {
+    "UPSTASH_VECTOR_REST_TOKEN": "@upstash_vector_rest_token",
+    "UPSTASH_VECTOR_REST_READONLY_TOKEN": "@upstash_vector_rest_readonly_token",
+    "UPSTASH_VECTOR_REST_URL": "@upstash_vector_rest_url",
+    "GROQ_API_KEY": "@groq_api_key",
+    "GROQ_EMBEDDING_MODEL": "@groq_embedding_model"
+  }
+}
