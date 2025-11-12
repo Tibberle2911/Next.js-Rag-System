@@ -171,24 +171,93 @@ class WebRAGEvaluator:
             results_data = []
             for i, (test_case, rag_result, scores) in enumerate(zip(aligned_test_cases, rag_results, individual_scores)):
                 try:
-                    # Extract individual scores for this test case
-                    faithfulness_score = scores.get("faithfulness", 0.0)
-                    answer_relevancy_score = scores.get("answer_relevancy", 0.0)
-                    context_precision_score = scores.get("context_precision", 0.0)
-                    context_recall_score = scores.get("context_recall", 0.0)
-                    context_relevancy_score = scores.get("context_relevancy", 0.0)
-                    answer_correctness_score = scores.get("answer_correctness", 0.0)
+                    # Extract evaluation method from scores
+                    evaluation_method = scores.get("evaluation_method", "groq")
                     
-                    # Calculate overall score from all metrics
-                    metric_scores = [
-                        faithfulness_score,
-                        answer_relevancy_score,
-                        context_precision_score,
-                        context_recall_score,
-                        context_relevancy_score,
-                        answer_correctness_score
-                    ]
-                    overall_score = sum(s for s in metric_scores if s > 0) / len([s for s in metric_scores if s > 0]) if any(s > 0 for s in metric_scores) else 0.0
+                    # Extract individual scores for this test case based on evaluation method
+                    if evaluation_method == "individual_metrics":
+                        # Individual metric evaluator scores
+                        faithfulness_score = scores.get("faithfulness", 0.0)
+                        answer_relevancy_score = scores.get("answer_relevancy", 0.0) 
+                        context_precision_score = scores.get("context_precision", 0.0)
+                        context_recall_score = scores.get("context_recall", 0.0)
+                        context_relevancy_score = scores.get("context_relevancy", 0.0)
+                        answer_correctness_score = scores.get("answer_correctness", 0.0)
+                        
+                        # Include individual metric scores 
+                        relevance_score = scores.get("relevance", 0.0)
+                        coherence_score = scores.get("coherence", 0.0)
+                        factual_accuracy_score = scores.get("factual_accuracy", 0.0)
+                        completeness_score = scores.get("completeness", 0.0)
+                        context_usage_score = scores.get("context_usage", 0.0)
+                        professional_tone_score = scores.get("professional_tone", 0.0)
+                        
+                        # Calculate overall score from individual metrics (more comprehensive)
+                        individual_metric_scores = [
+                            relevance_score,
+                            coherence_score,
+                            factual_accuracy_score,
+                            completeness_score,
+                            context_usage_score,
+                            professional_tone_score
+                        ]
+                        overall_score = sum(s for s in individual_metric_scores if s > 0) / len([s for s in individual_metric_scores if s > 0]) if any(s > 0 for s in individual_metric_scores) else 0.0
+                        
+                    elif evaluation_method == "langchain":
+                        # LangChain evaluator scores
+                        faithfulness_score = scores.get("faithfulness", 0.0)
+                        answer_relevancy_score = scores.get("answer_relevancy", 0.0)
+                        context_precision_score = scores.get("context_precision", 0.0)
+                        context_recall_score = scores.get("context_recall", 0.0)
+                        context_relevancy_score = scores.get("context_relevancy", 0.0)
+                        answer_correctness_score = scores.get("answer_correctness", 0.0)
+                        
+                        # Include LangChain metric scores
+                        relevance_score = scores.get("relevance", 0.0)
+                        coherence_score = scores.get("coherence", 0.0)
+                        factual_accuracy_score = scores.get("factual_accuracy", 0.0)
+                        completeness_score = scores.get("completeness", 0.0)
+                        context_usage_score = scores.get("context_usage", 0.0)
+                        professional_tone_score = scores.get("professional_tone", 0.0)
+                        
+                        # Calculate overall score from LangChain metrics
+                        langchain_metric_scores = [
+                            relevance_score,
+                            coherence_score,
+                            factual_accuracy_score,
+                            completeness_score,
+                            context_usage_score,
+                            professional_tone_score
+                        ]
+                        overall_score = sum(s for s in langchain_metric_scores if s > 0) / len([s for s in langchain_metric_scores if s > 0]) if any(s > 0 for s in langchain_metric_scores) else 0.0
+                        
+                    else:
+                        # GROQ/RAGAS evaluator scores (fallback)
+                        faithfulness_score = scores.get("faithfulness", 0.0)
+                        answer_relevancy_score = scores.get("answer_relevancy", 0.0)
+                        context_precision_score = scores.get("context_precision", 0.0)
+                        context_recall_score = scores.get("context_recall", 0.0)
+                        context_relevancy_score = scores.get("context_relevancy", 0.0)
+                        answer_correctness_score = scores.get("answer_correctness", 0.0)
+                        
+                        # Set individual metrics to None for GROQ method
+                        relevance_score = None
+                        coherence_score = None
+                        factual_accuracy_score = None
+                        completeness_score = None
+                        context_usage_score = None
+                        professional_tone_score = None
+                        
+                        # Calculate overall score from GROQ metrics
+                        groq_metric_scores = [
+                            faithfulness_score,
+                            answer_relevancy_score,
+                            context_precision_score,
+                            context_recall_score,
+                            context_relevancy_score,
+                            answer_correctness_score
+                        ]
+                        overall_score = sum(s for s in groq_metric_scores if s > 0) / len([s for s in groq_metric_scores if s > 0]) if any(s > 0 for s in groq_metric_scores) else 0.0
                     
                     result_data = {
                         "question": test_case.question,
@@ -199,14 +268,32 @@ class WebRAGEvaluator:
                         "rag_mode": rag_result.get("rag_mode", self.rag_mode),
                         "test_case_index": rag_result.get("test_case_index", i // 2),  # Which test case (0-4)
                         "run_number": rag_result.get("run_number", (i % 2) + 1),     # Which run (1 or 2)
+                        "evaluation_method": evaluation_method,
+                        # RAGAS/GROQ metrics (always included for backward compatibility)
                         "faithfulness": faithfulness_score,
                         "answer_relevancy": answer_relevancy_score,
                         "context_precision": context_precision_score,
                         "context_recall": context_recall_score,
                         "context_relevancy": context_relevancy_score,
                         "answer_correctness": answer_correctness_score,
+                        # Individual/LangChain metrics (included when available)
+                        "relevance": relevance_score,
+                        "coherence": coherence_score,
+                        "factual_accuracy": factual_accuracy_score,
+                        "completeness": completeness_score,
+                        "context_usage": context_usage_score,
+                        "professional_tone": professional_tone_score,
+                        # Calculated overall score
                         "overall_score": overall_score,
-                        "num_contexts": len(rag_result["contexts"])
+                        "num_contexts": len(rag_result["contexts"]),
+                        # Metric source indicators
+                        "metric_sources": {
+                            "primary_evaluator": evaluation_method,
+                            "available_metrics": {
+                                "ragas_groq": ["faithfulness", "answer_relevancy", "context_precision", "context_recall", "context_relevancy", "answer_correctness"],
+                                "individual_langchain": ["relevance", "coherence", "factual_accuracy", "completeness", "context_usage", "professional_tone"] if relevance_score is not None else []
+                            }
+                        }
                     }
                     
                     results_data.append(result_data)
@@ -257,8 +344,12 @@ class WebRAGEvaluator:
         
         category_averages = {cat: sum(scores)/len(scores) for cat, scores in categories.items()}
         
-        # Metric averages - include all 7 metrics
-        metrics = {
+        # Determine which metrics are available
+        evaluation_methods = list(set(r.get("evaluation_method", "groq") for r in results_data))
+        has_individual_metrics = any(r.get("relevance") is not None for r in results_data)
+        
+        # Comprehensive metric averages - include all available metrics
+        base_metrics = {
             "faithfulness": sum(r["faithfulness"] for r in results_data) / total_cases,
             "answer_relevancy": sum(r["answer_relevancy"] for r in results_data) / total_cases,
             "context_precision": sum(r["context_precision"] for r in results_data) / total_cases,
@@ -267,23 +358,69 @@ class WebRAGEvaluator:
             "answer_correctness": sum(r["answer_correctness"] for r in results_data) / total_cases
         }
         
-        # Performance by category
+        # Add individual/LangChain metrics if available
+        individual_metrics = {}
+        if has_individual_metrics:
+            valid_relevance = [r["relevance"] for r in results_data if r.get("relevance") is not None]
+            valid_coherence = [r["coherence"] for r in results_data if r.get("coherence") is not None]
+            valid_factual_accuracy = [r["factual_accuracy"] for r in results_data if r.get("factual_accuracy") is not None]
+            valid_completeness = [r["completeness"] for r in results_data if r.get("completeness") is not None]
+            valid_context_usage = [r["context_usage"] for r in results_data if r.get("context_usage") is not None]
+            valid_professional_tone = [r["professional_tone"] for r in results_data if r.get("professional_tone") is not None]
+            
+            if valid_relevance:
+                individual_metrics["relevance"] = sum(valid_relevance) / len(valid_relevance)
+            if valid_coherence:
+                individual_metrics["coherence"] = sum(valid_coherence) / len(valid_coherence)
+            if valid_factual_accuracy:
+                individual_metrics["factual_accuracy"] = sum(valid_factual_accuracy) / len(valid_factual_accuracy)
+            if valid_completeness:
+                individual_metrics["completeness"] = sum(valid_completeness) / len(valid_completeness)
+            if valid_context_usage:
+                individual_metrics["context_usage"] = sum(valid_context_usage) / len(valid_context_usage)
+            if valid_professional_tone:
+                individual_metrics["professional_tone"] = sum(valid_professional_tone) / len(valid_professional_tone)
+        
+        # Combine all metrics
+        all_metrics = {**base_metrics, **individual_metrics}
+        
+        # Performance by category with standard deviation
         performance_by_category = {}
         for cat, scores in categories.items():
             mean_score = sum(scores) / len(scores)
-            std_score = (sum((s - mean_score) ** 2 for s in scores) / len(scores)) ** 0.5
+            std_score = (sum((s - mean_score) ** 2 for s in scores) / len(scores)) ** 0.5 if len(scores) > 1 else 0.0
             performance_by_category[cat] = {
                 "mean": mean_score,
                 "std": std_score
             }
         
+        # Performance by evaluation method
+        method_performance = {}
+        for method in evaluation_methods:
+            method_results = [r for r in results_data if r.get("evaluation_method") == method]
+            if method_results:
+                method_scores = [r["overall_score"] for r in method_results]
+                method_performance[method] = {
+                    "count": len(method_results),
+                    "mean": sum(method_scores) / len(method_scores),
+                    "std": (sum((s - (sum(method_scores) / len(method_scores))) ** 2 for s in method_scores) / len(method_scores)) ** 0.5 if len(method_scores) > 1 else 0.0
+                }
+        
         return {
             "total_cases": total_cases,
             "avg_overall_score": avg_overall_score,
             "avg_response_time": avg_response_time,
-            "metrics": metrics,
+            "metrics": all_metrics,  # Now includes both base and individual metrics
             "performance_by_category": performance_by_category,
-            "category_averages": category_averages
+            "category_averages": category_averages,
+            "evaluation_methods": evaluation_methods,
+            "method_performance": method_performance,
+            "metric_coverage": {
+                "has_individual_metrics": has_individual_metrics,
+                "available_base_metrics": list(base_metrics.keys()),
+                "available_individual_metrics": list(individual_metrics.keys()) if individual_metrics else [],
+                "total_unique_metrics": len(all_metrics)
+            }
         }
 
 async def main():

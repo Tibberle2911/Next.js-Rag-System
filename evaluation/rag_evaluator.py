@@ -55,6 +55,19 @@ from datasets import Dataset
 from dotenv import load_dotenv
 load_dotenv()
 
+# LangChain integration with individual metric support
+try:
+    from simple_langchain_evaluator import SimpleLangChainRAGEvaluator as LangChainRAGEvaluator
+    from individual_metric_evaluator import IndividualMetricRAGEvaluator
+    LANGCHAIN_AVAILABLE = True
+    INDIVIDUAL_METRICS_AVAILABLE = True
+    print("✅ LangChain evaluator available")
+    print("✅ Individual metric evaluator available")
+except ImportError:
+    LANGCHAIN_AVAILABLE = False
+    INDIVIDUAL_METRICS_AVAILABLE = False
+    print("⚠️ LangChain evaluator not available, falling back to GROQ evaluation")
+
 @dataclass
 class RAGTestCase:
     """Individual test case for RAG evaluation"""
@@ -79,7 +92,7 @@ class RAGEvaluationResult:
     overall_score: float
 
 class RAGEvaluator:
-    """Comprehensive RAG system evaluator"""
+    """Comprehensive RAG system evaluator with LangChain integration"""
     
     def __init__(self, groq_api_key: str):
         self.groq_api_key = groq_api_key
@@ -89,6 +102,28 @@ class RAGEvaluator:
             temperature=0.3  # Higher temperature for evaluation variability
         )
         self.results: List[RAGEvaluationResult] = []
+        
+        # Initialize individual metric evaluator for more accurate assessment
+        if INDIVIDUAL_METRICS_AVAILABLE:
+            try:
+                self.individual_evaluator = IndividualMetricRAGEvaluator(groq_api_key)
+                print("✅ Individual metric evaluator initialized successfully")
+            except Exception as e:
+                print(f"⚠️ Individual metric evaluator initialization failed: {e}")
+                self.individual_evaluator = None
+        else:
+            self.individual_evaluator = None
+        
+        # Initialize LangChain evaluator if available
+        if LANGCHAIN_AVAILABLE:
+            try:
+                self.langchain_evaluator = LangChainRAGEvaluator(groq_api_key)
+                print("✅ LangChain evaluator initialized successfully")
+            except Exception as e:
+                print(f"⚠️ LangChain evaluator initialization failed: {e}")
+                self.langchain_evaluator = None
+        else:
+            self.langchain_evaluator = None
         
     def create_test_dataset(self) -> List[RAGTestCase]:
         """Create comprehensive test cases for Digital Twin RAG"""
@@ -411,12 +446,19 @@ class RAGEvaluator:
         
         dataset = Dataset.from_dict(data)
         
-        # Skip RAGAS entirely due to API dependency issues and use GROQ evaluation directly
+        # Use Individual Metric evaluation first (most accurate), then LangChain, then GROQ, finally manual fallback
         try:
-            print("🤖 Using GROQ-based evaluation (skipping RAGAS)...")
-            individual_results = await self._groq_based_evaluation(questions, answers, contexts, ground_truths)
+            if self.individual_evaluator:
+                print("🎯 Using Individual Metric evaluation framework (most accurate)...")
+                individual_results = await self._individual_metric_evaluation(questions, answers, contexts, ground_truths)
+            elif self.langchain_evaluator:
+                print("🔬 Using LangChain evaluation framework...")
+                individual_results = await self._langchain_based_evaluation(questions, answers, contexts, ground_truths)
+            else:
+                print("🤖 Using GROQ-based evaluation (LangChain not available)...")
+                individual_results = await self._groq_based_evaluation(questions, answers, contexts, ground_truths)
         except Exception as e:
-            print(f"⚠️ GROQ evaluation failed: {e}")
+            print(f"⚠️ Primary evaluation failed: {e}")
             print("📊 Using manual evaluation fallback...")
             fallback_result = self._manual_evaluation_fallback(questions, answers, contexts, ground_truths)
             # Convert fallback to individual results format
@@ -426,46 +468,170 @@ class RAGEvaluator:
         
         return individual_results
     
-    async def _groq_based_evaluation(self, questions: List[str], answers: List[str], 
-                                   contexts: List[List[str]], ground_truths: List[str]) -> List[Dict[str, float]]:
-        """GROQ-powered evaluation when RAGAS fails - returns individual scores for each test case"""
-        print("🤖 Running GROQ-based evaluation...")
-        
-        # Add initial delay to avoid hitting rate limits immediately
-        await asyncio.sleep(8.0)
+    async def _individual_metric_evaluation(self, questions: List[str], answers: List[str], 
+                                           contexts: List[List[str]], ground_truths: List[str]) -> List[Dict[str, float]]:
+        """Individual metric evaluation - most accurate method"""
+        print("🎯 Running Individual Metric evaluation (each metric evaluated separately)...")
         
         individual_results = []
         
         for i, (question, answer, context_list, ground_truth) in enumerate(zip(questions, answers, contexts, ground_truths)):
             print(f"  Evaluating {i+1}/{len(questions)}: {question[:50]}...")
             
-            # Default scores for this question with slight randomization to ensure uniqueness
-            import random
-            base_score = 0.5 + (random.random() - 0.5) * 0.1  # 0.45 to 0.55
-            result = {
-                'context_precision': round(base_score + (random.random() - 0.5) * 0.05, 3),
-                'context_recall': round(base_score + (random.random() - 0.5) * 0.05, 3),
-                'context_relevancy': round(base_score + (random.random() - 0.5) * 0.05, 3),
-                'answer_relevancy': round(base_score + (random.random() - 0.5) * 0.05, 3),
-                'faithfulness': round(base_score + (random.random() - 0.5) * 0.05, 3),
-                'answer_correctness': round(base_score + (random.random() - 0.5) * 0.05, 3)
+            try:
+                # Use individual metric evaluator for comprehensive evaluation
+                evaluation = await self.individual_evaluator.evaluate_response(
+                    question=question,
+                    prediction=answer,
+                    reference=ground_truth,
+                    context=context_list
+                )
+                
+                # Convert individual metric results to expected format
+                criteria_scores = self.individual_evaluator.get_criteria_scores(evaluation)
+                
+                result = {
+                    'faithfulness': criteria_scores.get('factual_accuracy', 0.5),
+                    'answer_relevancy': criteria_scores.get('relevance', 0.5),
+                    'context_precision': criteria_scores.get('context_usage', 0.5),
+                    'context_recall': criteria_scores.get('completeness', 0.5),
+                    'context_relevancy': criteria_scores.get('context_usage', 0.5),
+                    'answer_correctness': evaluation.overall_score,
+                    # Add individual metric scores
+                    'relevance': criteria_scores.get('relevance', 0.5),
+                    'coherence': criteria_scores.get('coherence', 0.5),
+                    'factual_accuracy': criteria_scores.get('factual_accuracy', 0.5),
+                    'completeness': criteria_scores.get('completeness', 0.5),
+                    'context_usage': criteria_scores.get('context_usage', 0.5),
+                    'professional_tone': criteria_scores.get('professional_tone', 0.5),
+                    'evaluation_method': 'individual_metrics'
+                }
+                
+                individual_results.append(result)
+                print(f"    ✅ Question {i+1} evaluated: avg={evaluation.overall_score:.3f} (individual metrics)")
+                
+                # Add detailed metric breakdown
+                print(f"      📊 Metric breakdown:")
+                for metric_name, metric_result in evaluation.individual_metrics.items():
+                    print(f"        {metric_name}: {metric_result.score:.3f}")
+                
+            except Exception as e:
+                print(f"    ❌ Individual metric evaluation failed for question {i+1}: {e}")
+                # Fallback to error state
+                result = {
+                    'faithfulness': 0.0,
+                    'answer_relevancy': 0.0,
+                    'context_precision': 0.0,
+                    'context_recall': 0.0,
+                    'context_relevancy': 0.0,
+                    'answer_correctness': 0.0,
+                    'evaluation_method': 'individual_metrics_failed',
+                    'error': str(e)
+                }
+                individual_results.append(result)
+        
+        print(f"🎯 Individual metric evaluation complete - {len(individual_results)} results with separate metric assessments")
+        return individual_results
+
+    async def _langchain_based_evaluation(self, questions: List[str], answers: List[str], 
+                                         contexts: List[List[str]], ground_truths: List[str]) -> List[Dict[str, float]]:
+        """LangChain-powered comprehensive evaluation"""
+        print("🔬 Running LangChain-based evaluation...")
+        
+        individual_results = []
+        
+        for i, (question, answer, context_list, ground_truth) in enumerate(zip(questions, answers, contexts, ground_truths)):
+            print(f"  Evaluating {i+1}/{len(questions)}: {question[:50]}...")
+            
+            try:
+                # Use LangChain evaluator for comprehensive evaluation
+                evaluation = await self.langchain_evaluator.evaluate_response(
+                    question=question,
+                    prediction=answer,
+                    reference=ground_truth,
+                    context=context_list
+                )
+                
+                # Convert LangChain results to expected format
+                result = {
+                    'faithfulness': evaluation.criteria_scores.get('factual_accuracy', 0.5),
+                    'answer_relevancy': evaluation.criteria_scores.get('relevance', 0.5),
+                    'context_precision': evaluation.criteria_scores.get('context_usage', 0.5),
+                    'context_recall': evaluation.criteria_scores.get('completeness', 0.5),
+                    'context_relevancy': evaluation.criteria_scores.get('context_usage', 0.5),
+                    'answer_correctness': evaluation.overall_score,
+                    # Add LangChain specific metrics
+                    'relevance': evaluation.criteria_scores.get('relevance', 0.5),
+                    'coherence': evaluation.criteria_scores.get('coherence', 0.5),
+                    'factual_accuracy': evaluation.criteria_scores.get('factual_accuracy', 0.5),
+                    'completeness': evaluation.criteria_scores.get('completeness', 0.5),
+                    'context_usage': evaluation.criteria_scores.get('context_usage', 0.5),
+                    'professional_tone': evaluation.criteria_scores.get('professional_tone', 0.5),
+                    'evaluation_method': 'langchain'
+                }
+                
+                individual_results.append(result)
+                print(f"    ✅ Question {i+1} evaluated: avg={evaluation.overall_score:.3f}")
+                
+            except Exception as e:
+                print(f"    ❌ LangChain evaluation failed for question {i+1}: {e}")
+                # Fallback to error state with proper error indication
+                result = {
+                    'faithfulness': 0.0,
+                    'answer_relevancy': 0.0,
+                    'context_precision': 0.0,
+                    'context_recall': 0.0,
+                    'context_relevancy': 0.0,
+                    'answer_correctness': 0.0,
+                    'error': str(e)
+                }
+                individual_results.append(result)
+        
+        print(f"🎯 LangChain evaluation complete - {len(individual_results)} individual results generated")
+        return individual_results
+
+    async def _groq_based_evaluation(self, questions: List[str], answers: List[str], 
+                                   contexts: List[List[str]], ground_truths: List[str]) -> List[Dict[str, float]]:
+        """GROQ-powered evaluation when LangChain fails - returns individual scores for each test case"""
+        print("🤖 Running GROQ-based evaluation...")
+        
+        # Add initial delay to avoid hitting rate limits immediately
+        await asyncio.sleep(2.0)
+        
+        individual_results = []
+        
+        for i, (question, answer, context_list, ground_truth) in enumerate(zip(questions, answers, contexts, ground_truths)):
+            print(f"  Evaluating {i+1}/{len(questions)}: {question[:50]}...")
+            
+            # Default scores for error cases (no random values)
+            error_result = {
+                'context_precision': 0.0,
+                'context_recall': 0.0,
+                'context_relevancy': 0.0,
+                'answer_relevancy': 0.0,
+                'faithfulness': 0.0,
+                'answer_correctness': 0.0,
+                'error': 'Evaluation failed'
             }
+            
+            # Initialize result with error defaults
+            result = error_result.copy()
+            result['evaluation_method'] = 'groq'
             
             try:
                 # Combine context for evaluation
                 context_text = " ".join(context_list) if context_list else "No context provided"
                 
-                # Create evaluation prompt with variation to ensure different responses
-                variation_seed = random.randint(1000, 9999)
+                # Create evaluation prompt without random variation
                 eval_prompt = f"""
-You are an expert RAG system evaluator. Task #{variation_seed}: Carefully evaluate this response.
+You are an expert RAG system evaluator. Carefully evaluate this response.
 
 QUESTION: {question}
 RETRIEVED CONTEXT: {context_text}
 GENERATED ANSWER: {answer}
 EXPECTED ANSWER: {ground_truth}
 
-Evaluate each metric on a scale from 0.1 to 1.0 (avoid 0.0 unless truly terrible):
+Evaluate each metric on a scale from 0.1 to 1.0:
 
 1. CONTEXT_PRECISION (0.1-1.0): How relevant is the context to answering the question?
 2. CONTEXT_RECALL (0.1-1.0): Does the context contain sufficient information to answer?
@@ -562,7 +728,7 @@ Provide realistic scores - most should be between 0.3-0.9. Return ONLY this JSON
                 # If parsing failed, ensure we still have reasonable fallback scores
                 if not success:
                     print(f"    🔄 Question {i+1}: Using intelligent fallback evaluation")
-                    # Create realistic evaluation based on content analysis
+                    # Create consistent evaluation based on content analysis without randomization
                     answer_length = len(answer.split()) if answer else 0
                     context_length = sum(len(ctx.split()) for ctx in context_list) if context_list else 0
                     
@@ -570,23 +736,25 @@ Provide realistic scores - most should be between 0.3-0.9. Return ONLY this JSON
                     base_score = 0.3 + (min(answer_length, 100) / 200)  # 0.3-0.8 based on length
                     context_score = 0.3 + (min(context_length, 50) / 100) # 0.3-0.8 based on context
                     
-                    # Add individual variations for each metric with realistic ranges
-                    result['context_precision'] = round(max(0.2, context_score + (random.random() - 0.5) * 0.3), 3)
-                    result['context_recall'] = round(max(0.2, context_score + (random.random() - 0.5) * 0.3), 3)
-                    result['context_relevancy'] = round(max(0.2, context_score + (random.random() - 0.5) * 0.3), 3) 
-                    result['answer_relevancy'] = round(max(0.3, base_score + (random.random() - 0.5) * 0.3), 3)
-                    result['faithfulness'] = round(max(0.3, base_score + (random.random() - 0.5) * 0.3), 3)
-                    result['answer_correctness'] = round(max(0.2, base_score + (random.random() - 0.5) * 0.4), 3)
+                    # Use consistent scores without random variation
+                    result['context_precision'] = round(max(0.2, context_score), 3)
+                    result['context_recall'] = round(max(0.2, context_score), 3)
+                    result['context_relevancy'] = round(max(0.2, context_score), 3) 
+                    result['answer_relevancy'] = round(max(0.3, base_score), 3)
+                    result['faithfulness'] = round(max(0.3, base_score), 3)
+                    result['answer_correctness'] = round(max(0.2, base_score), 3)
+                    result['error'] = 'GROQ evaluation parsing failed - using content-based fallback'
                     
                     # Ensure all scores are in realistic range (0.2-0.9)
-                    for metric in result:
+                    for metric in ['context_precision', 'context_recall', 'context_relevancy', 'answer_relevancy', 'faithfulness', 'answer_correctness']:
                         result[metric] = max(0.2, min(0.9, result[metric]))
                         
             except Exception as e:
                 print(f"    ❌ GROQ evaluation error for question {i+1}: {e}")
-                # When GROQ fails, create meaningful mock scores based on content analysis
-                success = False
-                print(f"    🔄 Question {i+1}: Using enhanced fallback evaluation")
+                # When GROQ fails, use error result
+                result = error_result.copy()
+                result['error'] = f'GROQ evaluation failed: {str(e)}'
+                print(f"    ⚠️ Question {i+1}: Using error fallback due to exception")
             
             individual_results.append(result)
             
@@ -598,75 +766,25 @@ Provide realistic scores - most should be between 0.3-0.9. Return ONLY this JSON
     
     def _manual_evaluation_fallback(self, questions: List[str], answers: List[str], 
                                    contexts: List[List[str]], ground_truths: List[str]) -> Dict[str, float]:
-        """Manual evaluation fallback when RAGAS fails"""
-        print("📊 Computing manual evaluation metrics...")
+        """Manual evaluation fallback when all automated evaluations fail"""
+        print("⚠️ Using manual evaluation fallback due to system failures")
         
-        # Simple heuristic-based evaluation
-        n_questions = len(questions)
-        
-        # Basic length and content checks
-        answer_lengths = [len(answer.split()) for answer in answers]
-        avg_answer_length = np.mean(answer_lengths)
-        
-        # Context utilization
-        context_utilization = []
-        for i, (answer, context_list) in enumerate(zip(answers, contexts)):
-            if not context_list:
-                context_utilization.append(0.0)
-                continue
-                
-            # Check how much of the context appears to be used
-            context_text = " ".join(context_list)
-            common_words = set(answer.lower().split()) & set(context_text.lower().split())
-            utilization_score = len(common_words) / max(len(answer.split()), 1)
-            context_utilization.append(min(utilization_score, 1.0))
-        
-        # Response completeness (basic length heuristic)
-        completeness_scores = []
-        for answer in answers:
-            # Assume 20-200 words is a good answer range
-            word_count = len(answer.split())
-            if word_count < 10:
-                score = word_count / 10.0  # Penalize very short answers
-            elif word_count > 300:
-                score = max(0.7, 1.0 - (word_count - 300) / 1000.0)  # Penalize very long answers
-            else:
-                score = 1.0
-            completeness_scores.append(score)
-        
-        # Keyword coverage (simple implementation)
-        keyword_coverage_scores = []
-        for i, (question, answer) in enumerate(zip(questions, answers)):
-            question_words = set(question.lower().split())
-            answer_words = set(answer.lower().split())
-            # Remove common stop words
-            stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'this', 'that', 'these', 'those'}
-            question_content = question_words - stop_words
-            answer_content = answer_words - stop_words
-            
-            if question_content:
-                overlap = len(question_content & answer_content) / len(question_content)
-                keyword_coverage_scores.append(overlap)
-            else:
-                keyword_coverage_scores.append(0.5)  # Default for edge cases
-        
-        # Compile results
-        manual_result = {
-            'context_precision': np.mean(context_utilization),
-            'context_recall': np.mean([0.8 if ctx else 0.2 for ctx in contexts]),  # Basic availability check
-            'context_relevancy': np.mean(context_utilization),
-            'answer_relevancy': np.mean(keyword_coverage_scores),
-            'faithfulness': np.mean(context_utilization),  # Assume context usage implies faithfulness
-            'answer_correctness': np.mean(completeness_scores),
-            'manual_evaluation': True  # Flag to indicate this was manual
+        # Return consistent baseline scores without randomization
+        fallback_scores = {
+            'context_precision': 0.5,
+            'context_recall': 0.5,
+            'context_relevancy': 0.5,
+            'answer_relevancy': 0.5,
+            'faithfulness': 0.5,
+            'answer_correctness': 0.5,
+            'evaluation_method': 'fallback',
+            'error': 'All automated evaluation methods failed - using fallback scores'
         }
         
-        print(f"📈 Manual evaluation complete - Average scores:")
-        for metric, score in manual_result.items():
-            if metric != 'manual_evaluation':
-                print(f"   {metric}: {score:.3f}")
+        print("⚠️ WARNING: Returning baseline scores due to evaluation system failure")
+        print("🔧 Please check your GROQ API key and network connectivity")
         
-        return manual_result
+        return fallback_scores
     
     async def run_comprehensive_evaluation(self) -> pd.DataFrame:
         """Run complete evaluation suite"""

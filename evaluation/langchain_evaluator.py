@@ -13,20 +13,53 @@ import time
 # LangChain Core
 from langchain_core.documents import Document
 from langchain_core.prompts import PromptTemplate
-from langchain.chains import LLMChain
+from langchain_core.runnables import RunnablePassthrough
 
-# LangChain Evaluation
-from langchain.evaluation import (
-    load_evaluator,
-    EvaluatorType,
-    Criteria
-)
+# LangChain Evaluation (using modern approach)
+try:
+    from langchain.evaluation import (
+        load_evaluator,
+        EvaluatorType,
+        Criteria
+    )
+except ImportError:
+    # Fallback for newer versions
+    try:
+        from langchain_community.evaluation import (
+            load_evaluator,
+            EvaluatorType,
+            Criteria
+        )
+    except ImportError:
+        # Define minimal fallback
+        class EvaluatorType:
+            CRITERIA = "criteria"
+            PAIRWISE_STRING = "pairwise_string"
+            
+        class Criteria:
+            CONCISENESS = "conciseness"
+            RELEVANCE = "relevance" 
+            CORRECTNESS = "correctness"
+            COHERENCE = "coherence"
+            HARMFULNESS = "harmfulness"
+            
+        def load_evaluator(*args, **kwargs):
+            raise ImportError("LangChain evaluator not available")
 
 # LangChain Groq Integration  
 from langchain_groq import ChatGroq
 
 # Custom Evaluation Metrics
-from langchain.evaluation.criteria import LabeledCriteriaEvalChain
+try:
+    from langchain.evaluation.criteria import LabeledCriteriaEvalChain
+except ImportError:
+    try:
+        from langchain_community.evaluation.criteria import LabeledCriteriaEvalChain
+    except ImportError:
+        # Simple fallback class
+        class LabeledCriteriaEvalChain:
+            def __init__(self, *args, **kwargs):
+                pass
 
 # Async HTTP client for RAG system
 import aiohttp

@@ -15,6 +15,10 @@
 		"rag-system-mcp": {
 			"url": "http://localhost:3000/api/mcp",
 			"type": "http"
+		},
+		"rag-system-mcp-remote": {
+			"url": "https://next-js-rag-system-kos2.vercel.app/api/mcp",
+			"type": "http"
 		}
 	},
 }
