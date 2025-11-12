@@ -12,6 +12,9 @@
       "maxDuration": 30
     },
     "app/api/evaluation/run/route.ts": {
+      "maxDuration": 120
+    },
+    "app/api/evaluation/single/route.ts": {
       "maxDuration": 60
     },
     "app/api/mcp/route.ts": {
