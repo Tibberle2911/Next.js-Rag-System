@@ -660,72 +660,47 @@ export default function EvaluationPage() {
           {/* Comparison Results */}
           {comparisonResult && (
             <div className="space-y-6 sm:space-y-8">
-              {/* Enhanced Results Header with better visual hierarchy */}
-              <div className="text-center space-y-4 px-4">
-                <div className="flex items-center justify-center gap-4 mb-4">
-                  <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500/20 via-emerald-400/15 to-emerald-300/10 border-2 border-emerald-500/30 shadow-lg">
-                    <CheckCircle className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+              <div className="text-center">
+                <div className="flex items-center justify-center gap-3 mb-4">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-br from-green-500/20 via-green-500/15 to-green-500/10 border border-green-500/20">
+                    <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
                   </div>
-                  <div className="text-left">
-                    <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-tight">Evaluation Results</h2>
-                    <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">Analysis Complete</p>
-                  </div>
+                  <h2 className="text-xl sm:text-2xl font-bold text-foreground">Evaluation Results</h2>
                 </div>
-                <div className="max-w-2xl mx-auto">
-                  <p className="text-base text-muted-foreground leading-relaxed">
-                    Comprehensive performance comparison between Basic and Advanced RAG approaches with detailed metrics and insights
-                  </p>
-                </div>
+                <p className="text-sm sm:text-base text-muted-foreground">
+                  Comprehensive comparison between Basic and Advanced RAG modes
+                </p>
               </div>
 
-              {/* Enhanced Tabbed Results Interface */}
+              {/* Tabbed Results Interface */}
               <Tabs defaultValue="overview" className="w-full">
-                <div className="flex justify-center mb-8">
-                  <TabsList className="grid w-full max-w-md grid-cols-3 h-12 bg-muted/30 border border-border/50 backdrop-blur-sm rounded-xl p-1">
-                    <TabsTrigger 
-                      value="overview" 
-                      className="flex items-center justify-center gap-2 rounded-lg text-sm font-medium transition-all duration-200 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-md data-[state=active]:border data-[state=active]:border-border/50"
-                    >
-                      <TrendingUp className="h-4 w-4" />
-                      <span className="hidden sm:inline">Overview</span>
-                      <span className="sm:hidden">Stats</span>
-                    </TabsTrigger>
-                    <TabsTrigger 
-                      value="metrics" 
-                      className="flex items-center justify-center gap-2 rounded-lg text-sm font-medium transition-all duration-200 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-md data-[state=active]:border data-[state=active]:border-border/50"
-                    >
-                      <BarChart3 className="h-4 w-4" />
-                      <span className="hidden sm:inline">Metrics</span>
-                      <span className="sm:hidden">Chart</span>
-                    </TabsTrigger>
-                    <TabsTrigger 
-                      value="feedback" 
-                      className="flex items-center justify-center gap-2 rounded-lg text-sm font-medium transition-all duration-200 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-md data-[state=active]:border data-[state=active]:border-border/50"
-                    >
-                      <AlertCircle className="h-4 w-4" />
-                      <span className="hidden sm:inline">Feedback</span>
-                      <span className="sm:hidden">Details</span>
-                    </TabsTrigger>
-                  </TabsList>
-                </div>
+                <TabsList className="grid w-full grid-cols-3 lg:w-[400px] lg:mx-auto">
+                  <TabsTrigger value="overview" className="flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4" />
+                    <span className="hidden sm:inline">Overview</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="metrics" className="flex items-center gap-2">
+                    <BarChart3 className="h-4 w-4" />
+                    <span className="hidden sm:inline">Metrics</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="feedback" className="flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4" />
+                    <span className="hidden sm:inline">Feedback</span>
+                  </TabsTrigger>
+                </TabsList>
 
                 {/* Overview Tab */}
                 <TabsContent value="overview" className="space-y-6">
-                  {/* Enhanced Score Comparison Cards */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
-                    {/* Enhanced Basic RAG Results */}
-                    <Card className="relative overflow-hidden border-2 border-blue-200/60 bg-gradient-to-br from-blue-50/80 via-blue-50/50 to-blue-100/40 dark:from-blue-950/40 dark:via-blue-950/25 dark:to-blue-900/30 dark:border-blue-700/50 shadow-lg hover:shadow-xl transition-all duration-300">
-                      {/* Subtle background pattern for visual depth */}
-                      <div className="absolute inset-0 bg-gradient-to-br from-transparent via-blue-500/5 to-blue-600/10 dark:from-transparent dark:via-blue-400/10 dark:to-blue-300/5" />
-                      <CardHeader className="relative">
-                        <CardTitle className="flex items-center gap-4 text-xl font-bold">
-                          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/30 border-2 border-blue-500/40 shadow-md">
-                            <div className="h-3 w-3 bg-blue-500 dark:bg-blue-400 rounded-full animate-pulse"></div>
+                  {/* Overall Score Comparison */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                    {/* Basic RAG Results */}
+                    <Card className="border border-blue-200/50 bg-gradient-to-br from-blue-50/50 to-blue-100/30 dark:from-blue-950/30 dark:to-blue-900/20 dark:border-blue-800/30">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-3 text-lg">
+                          <div className="flex items-center justify-center w-6 h-6 rounded-lg bg-blue-500/20 border border-blue-500/30">
+                            <div className="h-2 w-2 bg-blue-500 rounded-full"></div>
                           </div>
-                          <div>
-                            <span className="text-blue-700 dark:text-blue-300">Basic RAG</span>
-                            <div className="text-xs font-normal text-blue-600/70 dark:text-blue-400/70 mt-1">Standard Approach</div>
-                          </div>
+                          Basic RAG
                         </CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4">
@@ -769,26 +744,14 @@ export default function EvaluationPage() {
                                 </div>
                               )}
                             </div>
-                            <div className="space-y-4 mt-6 pt-4 border-t border-blue-200/50 dark:border-blue-700/30">
-                              <div className="flex items-center justify-between group">
-                                <div className="flex items-center gap-2">
-                                  <Clock className="h-4 w-4 text-blue-500 dark:text-blue-400" />
-                                  <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Response Time</span>
-                                </div>
-                                <div className="text-right">
-                                  <span className="text-lg font-bold text-blue-600 dark:text-blue-400 font-mono">{comparisonResult.basicRAG.response_time.toFixed(2)}</span>
-                                  <span className="text-xs text-blue-500 dark:text-blue-400 ml-1">sec</span>
-                                </div>
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="font-medium text-muted-foreground">Response Time</span>
+                                <span className="font-semibold">{comparisonResult.basicRAG.response_time.toFixed(2)}s</span>
                               </div>
-                              <div className="flex items-center justify-between group">
-                                <div className="flex items-center gap-2">
-                                  <Database className="h-4 w-4 text-blue-500 dark:text-blue-400" />
-                                  <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Contexts Retrieved</span>
-                                </div>
-                                <div className="text-right">
-                                  <span className="text-lg font-bold text-blue-600 dark:text-blue-400 font-mono">{comparisonResult.basicRAG.num_contexts}</span>
-                                  <span className="text-xs text-blue-500 dark:text-blue-400 ml-1">items</span>
-                                </div>
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="font-medium text-muted-foreground">Contexts Retrieved</span>
+                                <span className="font-semibold">{comparisonResult.basicRAG.num_contexts}</span>
                               </div>
                             </div>
                           </>
@@ -796,19 +759,14 @@ export default function EvaluationPage() {
                       </CardContent>
                     </Card>
 
-                    {/* Enhanced Advanced RAG Results */}
-                    <Card className="relative overflow-hidden border-2 border-purple-200/60 bg-gradient-to-br from-purple-50/80 via-purple-50/50 to-purple-100/40 dark:from-purple-950/40 dark:via-purple-950/25 dark:to-purple-900/30 dark:border-purple-700/50 shadow-lg hover:shadow-xl transition-all duration-300">
-                      {/* Subtle background pattern for visual depth */}
-                      <div className="absolute inset-0 bg-gradient-to-br from-transparent via-purple-500/5 to-purple-600/10 dark:from-transparent dark:via-purple-400/10 dark:to-purple-300/5" />
-                      <CardHeader className="relative">
-                        <CardTitle className="flex items-center gap-4 text-xl font-bold">
-                          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/30 border-2 border-purple-500/40 shadow-md">
-                            <Zap className="h-5 w-5 text-purple-500 dark:text-purple-400" />
+                    {/* Advanced RAG Results */}
+                    <Card className="border border-purple-200/50 bg-gradient-to-br from-purple-50/50 to-purple-100/30 dark:from-purple-950/30 dark:to-purple-900/20 dark:border-purple-800/30">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-3 text-lg">
+                          <div className="flex items-center justify-center w-6 h-6 rounded-lg bg-purple-500/20 border border-purple-500/30">
+                            <Zap className="h-3 w-3 text-purple-500" />
                           </div>
-                          <div>
-                            <span className="text-purple-700 dark:text-purple-300">Advanced RAG</span>
-                            <div className="text-xs font-normal text-purple-600/70 dark:text-purple-400/70 mt-1">Enhanced Processing</div>
-                          </div>
+                          Advanced RAG
                         </CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4">
@@ -852,26 +810,14 @@ export default function EvaluationPage() {
                                 </div>
                               )}
                             </div>
-                            <div className="space-y-4 mt-6 pt-4 border-t border-purple-200/50 dark:border-purple-700/30">
-                              <div className="flex items-center justify-between group">
-                                <div className="flex items-center gap-2">
-                                  <Clock className="h-4 w-4 text-purple-500 dark:text-purple-400" />
-                                  <span className="text-sm font-medium text-purple-700 dark:text-purple-300">Response Time</span>
-                                </div>
-                                <div className="text-right">
-                                  <span className="text-lg font-bold text-purple-600 dark:text-purple-400 font-mono">{comparisonResult.advancedRAG.response_time.toFixed(2)}</span>
-                                  <span className="text-xs text-purple-500 dark:text-purple-400 ml-1">sec</span>
-                                </div>
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="font-medium text-muted-foreground">Response Time</span>
+                                <span className="font-semibold">{comparisonResult.advancedRAG.response_time.toFixed(2)}s</span>
                               </div>
-                              <div className="flex items-center justify-between group">
-                                <div className="flex items-center gap-2">
-                                  <Database className="h-4 w-4 text-purple-500 dark:text-purple-400" />
-                                  <span className="text-sm font-medium text-purple-700 dark:text-purple-300">Contexts Retrieved</span>
-                                </div>
-                                <div className="text-right">
-                                  <span className="text-lg font-bold text-purple-600 dark:text-purple-400 font-mono">{comparisonResult.advancedRAG.num_contexts}</span>
-                                  <span className="text-xs text-purple-500 dark:text-purple-400 ml-1">items</span>
-                                </div>
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="font-medium text-muted-foreground">Contexts Retrieved</span>
+                                <span className="font-semibold">{comparisonResult.advancedRAG.num_contexts}</span>
                               </div>
                               {comparisonResult.advancedRAG.techniques_used && comparisonResult.advancedRAG.techniques_used.length > 0 && (
                                 <div className="pt-2 border-t border-border/50">
@@ -892,40 +838,36 @@ export default function EvaluationPage() {
                     </Card>
                   </div>
 
-                  {/* Enhanced Generated Answers Comparison */}
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 sm:gap-8">
-                    {/* Enhanced Basic RAG Answer */}
-                    <Card className="relative overflow-hidden border border-blue-200/60 bg-gradient-to-br from-blue-50/40 via-blue-50/20 to-blue-100/30 dark:from-blue-950/25 dark:via-blue-950/15 dark:to-blue-900/20 dark:border-blue-700/40 shadow-lg hover:shadow-xl transition-all duration-300">
-                      <div className="absolute inset-0 bg-gradient-to-br from-transparent via-blue-500/3 to-blue-600/5" />
-                      <CardHeader className="relative pb-3">
-                        <CardTitle className="flex items-center gap-3 text-lg font-bold">
-                          <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/30 border border-blue-500/40">
-                            <div className="h-2.5 w-2.5 bg-blue-500 dark:bg-blue-400 rounded-full"></div>
+                  {/* Generated Answers Comparison */}
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
+                    {/* Basic RAG Answer */}
+                    <Card className="border border-blue-200/50 bg-gradient-to-br from-blue-50/30 to-blue-100/20 dark:from-blue-950/20 dark:to-blue-900/10 dark:border-blue-800/30">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-3 text-base sm:text-lg">
+                          <div className="flex items-center justify-center w-6 h-6 rounded-lg bg-blue-500/20 border border-blue-500/30">
+                            <div className="h-2 w-2 bg-blue-500 rounded-full"></div>
                           </div>
-                          <span className="text-blue-700 dark:text-blue-300">Basic RAG Answer</span>
+                          Basic RAG Answer
                         </CardTitle>
-                        <div className="w-full h-px bg-gradient-to-r from-transparent via-blue-300/50 to-transparent" />
                       </CardHeader>
-                      <CardContent className="relative pt-0">
-                        <div className="prose dark:prose-invert max-w-none">
-                          <div className="text-sm leading-7 whitespace-pre-wrap text-foreground bg-gradient-to-br from-background/80 to-background/60 backdrop-blur-sm p-6 rounded-xl border border-border/30 shadow-inner hover:shadow-lg transition-shadow duration-300">
+                      <CardContent>
+                        <div className="prose dark:prose-invert max-w-none prose-sm">
+                          <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground bg-background/50 p-4 rounded-lg border border-border/50">
                             {comparisonResult.basicRAG.answer}
                           </div>
                         </div>
                       </CardContent>
                     </Card>
 
-                    {/* Enhanced Advanced RAG Answer */}
-                    <Card className="relative overflow-hidden border border-purple-200/60 bg-gradient-to-br from-purple-50/40 via-purple-50/20 to-purple-100/30 dark:from-purple-950/25 dark:via-purple-950/15 dark:to-purple-900/20 dark:border-purple-700/40 shadow-lg hover:shadow-xl transition-all duration-300">
-                      <div className="absolute inset-0 bg-gradient-to-br from-transparent via-purple-500/3 to-purple-600/5" />
-                      <CardHeader className="relative pb-3">
-                        <CardTitle className="flex items-center gap-3 text-lg font-bold">
-                          <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/30 border border-purple-500/40">
-                            <Zap className="h-4 w-4 text-purple-500 dark:text-purple-400" />
+                    {/* Advanced RAG Answer */}
+                    <Card className="border border-purple-200/50 bg-gradient-to-br from-purple-50/30 to-purple-100/20 dark:from-purple-950/20 dark:to-purple-900/10 dark:border-purple-800/30">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-3 text-base sm:text-lg">
+                          <div className="flex items-center justify-center w-6 h-6 rounded-lg bg-purple-500/20 border border-purple-500/30">
+                            <Zap className="h-3 w-3 text-purple-500" />
                           </div>
-                          <span className="text-purple-700 dark:text-purple-300">Advanced RAG Answer</span>
+                          Advanced RAG Answer
                         </CardTitle>
-                        <div className="w-full h-px bg-gradient-to-r from-transparent via-purple-300/50 to-transparent" />
                       </CardHeader>
                       <CardContent>
                         <div className="prose dark:prose-invert max-w-none prose-sm">
@@ -938,24 +880,19 @@ export default function EvaluationPage() {
                   </div>
                 </TabsContent>
 
-                {/* Enhanced Metrics Visualization Tab */}
-                <TabsContent value="metrics" className="space-y-8">
-                  <Card className="relative overflow-hidden border border-slate-200/60 bg-gradient-to-br from-slate-50/50 via-slate-50/30 to-slate-100/40 dark:from-slate-950/40 dark:via-slate-950/25 dark:to-slate-900/30 dark:border-slate-700/40 shadow-xl">
-                    <div className="absolute inset-0 bg-gradient-to-br from-transparent via-slate-500/5 to-slate-600/10 dark:from-transparent dark:via-slate-400/10 dark:to-slate-300/5" />
-                    <CardHeader className="relative space-y-4">
-                      <CardTitle className="flex items-center gap-4 text-xl font-bold">
-                        <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-slate-500/20 to-slate-600/30 border-2 border-slate-500/40 shadow-lg">
-                          <BarChart3 className="h-6 w-6 text-slate-600 dark:text-slate-400" />
+                {/* Metrics Tab with D3 Visualization */}
+                <TabsContent value="metrics" className="space-y-6">
+                  <Card className="border border-gray-200/50 bg-gradient-to-br from-gray-50/30 to-gray-100/20 dark:from-gray-950/30 dark:to-gray-900/20 dark:border-gray-800/30">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-3 text-lg">
+                        <div className="flex items-center justify-center w-6 h-6 rounded-lg bg-gray-500/20 border border-gray-500/30">
+                          <BarChart3 className="h-3 w-3 text-gray-600" />
                         </div>
-                        <div>
-                          <span className="text-slate-700 dark:text-slate-300">Performance Metrics Visualization</span>
-                          <div className="text-sm font-normal text-slate-600/70 dark:text-slate-400/70 mt-1">Interactive Analysis Dashboard</div>
-                        </div>
+                        Performance Metrics Visualization
                       </CardTitle>
-                      <CardDescription className="text-base leading-relaxed text-slate-600 dark:text-slate-400">
-                        Comprehensive radar chart visualization comparing Basic and Advanced RAG performance across all evaluation metrics with interactive data exploration
+                      <CardDescription>
+                        Interactive radar chart comparing Basic and Advanced RAG performance across all evaluation metrics
                       </CardDescription>
-                      <div className="w-full h-px bg-gradient-to-r from-transparent via-slate-300/50 to-transparent" />
                     </CardHeader>
                     <CardContent>
                       <EvaluationMetricsChart 
@@ -967,58 +904,45 @@ export default function EvaluationPage() {
                   </Card>
                 </TabsContent>
 
-                {/* Enhanced Feedback Tab */}
-                <TabsContent value="feedback" className="space-y-8">
+                {/* Feedback Tab */}
+                <TabsContent value="feedback" className="space-y-6">
                   {(comparisonResult.basicRAG.individual_metric_details || comparisonResult.advancedRAG.individual_metric_details) ? (
-                    <Card className="relative overflow-hidden border-2 border-emerald-200/60 bg-gradient-to-br from-emerald-50/50 via-emerald-50/30 to-emerald-100/40 dark:from-emerald-950/40 dark:via-emerald-950/25 dark:to-emerald-900/30 dark:border-emerald-700/50 shadow-xl">
-                      <div className="absolute inset-0 bg-gradient-to-br from-transparent via-emerald-500/5 to-emerald-600/10 dark:from-transparent dark:via-emerald-400/10 dark:to-emerald-300/5" />
-                      <CardHeader className="relative space-y-4">
-                        <CardTitle className="flex items-center gap-4 text-xl font-bold">
-                          <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-emerald-600/30 border-2 border-emerald-500/40 shadow-lg">
-                            <AlertCircle className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+                    <Card className="border border-emerald-200/50 bg-gradient-to-br from-emerald-50/30 to-emerald-100/20 dark:from-emerald-950/30 dark:to-emerald-900/20 dark:border-emerald-800/30">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-3 text-lg">
+                          <div className="flex items-center justify-center w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-500/30">
+                            <AlertCircle className="h-3 w-3 text-emerald-600" />
                           </div>
-                          <div>
-                            <span className="text-emerald-700 dark:text-emerald-300">Individual Metric Feedback</span>
-                            <div className="text-sm font-normal text-emerald-600/70 dark:text-emerald-400/70 mt-1">Detailed Performance Analysis</div>
-                          </div>
+                          Individual Metric Feedback
                         </CardTitle>
-                        <CardDescription className="text-base leading-relaxed text-emerald-600 dark:text-emerald-400">
-                          In-depth feedback and scoring for each evaluation metric assessed individually with comprehensive insights
+                        <CardDescription>
+                          Detailed feedback for each evaluation metric assessed individually
                         </CardDescription>
-                        <div className="w-full h-px bg-gradient-to-r from-transparent via-emerald-300/50 to-transparent" />
                       </CardHeader>
-                      <CardContent className="relative space-y-8 p-6">
+                      <CardContent className="space-y-6">
                         {comparisonResult.basicRAG.individual_metric_details && (
-                          <div className="space-y-6">
-                            <div className="flex items-center gap-3 pb-4 border-b border-blue-200/50 dark:border-blue-700/30">
-                              <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/30 border border-blue-500/40">
-                                <div className="h-2.5 w-2.5 bg-blue-500 dark:bg-blue-400 rounded-full"></div>
-                              </div>
-                              <h4 className="text-lg font-bold text-blue-700 dark:text-blue-300">Basic RAG Detailed Feedback</h4>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                          <div>
+                            <h4 className="text-sm font-semibold text-blue-600 dark:text-blue-400 mb-4 flex items-center gap-2">
+                              <div className="h-2 w-2 bg-blue-500 rounded-full"></div>
+                              Basic RAG Detailed Feedback
+                            </h4>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                               {Object.entries(comparisonResult.basicRAG.individual_metric_details).map(([metric, details]) => (
-                                <Card key={metric} className="relative overflow-hidden bg-white/90 dark:bg-slate-800/90 border-2 border-slate-200/60 dark:border-slate-700/60 shadow-lg hover:shadow-xl transition-all duration-300 backdrop-blur-sm">
-                                  <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-blue-600/10 dark:from-blue-400/5 dark:to-blue-300/10" />
-                                  <CardContent className="relative p-5 space-y-4">
+                                <Card key={metric} className="bg-white dark:bg-gray-800/50 border border-gray-200/50 dark:border-gray-700/50">
+                                  <CardContent className="p-4 space-y-3">
                                     <div className="flex items-center justify-between">
-                                      <h5 className="text-base font-bold text-slate-700 dark:text-slate-300 capitalize tracking-wide">
+                                      <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize">
                                         {metric.replace('_', ' ')}
                                       </h5>
-                                      <Badge variant="outline" className="text-sm font-bold text-emerald-600 dark:text-emerald-400 border-2 border-emerald-500/40 bg-emerald-50/80 dark:bg-emerald-950/40 px-3 py-1">
+                                      <Badge variant="outline" className="text-xs font-bold text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
                                         {(details.score * 100).toFixed(1)}%
                                       </Badge>
                                     </div>
-                                    <div className="h-px bg-gradient-to-r from-transparent via-slate-300/50 to-transparent" />
-                                    <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                                    <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
                                       {details.feedback}
                                     </p>
-                                    <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pt-3 border-t border-slate-200/50 dark:border-slate-700/50">
-                                      <div className="flex items-center gap-2">
-                                        <Clock className="h-3 w-3" />
-                                        <span>Eval time:</span>
-                                      </div>
-                                      <span className="font-mono font-semibold">{details.evaluation_time.toFixed(2)}s</span>
+                                    <div className="text-xs text-gray-400 dark:text-gray-500 border-t border-gray-200/50 dark:border-gray-700/50 pt-2">
+                                      Evaluation time: {details.evaluation_time.toFixed(2)}s
                                     </div>
                                   </CardContent>
                                 </Card>
@@ -1028,36 +952,28 @@ export default function EvaluationPage() {
                         )}
                         
                         {comparisonResult.advancedRAG.individual_metric_details && (
-                          <div className="space-y-6">
-                            <div className="flex items-center gap-3 pb-4 border-b border-purple-200/50 dark:border-purple-700/30">
-                              <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/30 border border-purple-500/40">
-                                <Zap className="h-4 w-4 text-purple-500 dark:text-purple-400" />
-                              </div>
-                              <h4 className="text-lg font-bold text-purple-700 dark:text-purple-300">Advanced RAG Detailed Feedback</h4>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                          <div>
+                            <h4 className="text-sm font-semibold text-purple-600 dark:text-purple-400 mb-4 flex items-center gap-2">
+                              <div className="h-2 w-2 bg-purple-500 rounded-full"></div>
+                              Advanced RAG Detailed Feedback
+                            </h4>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                               {Object.entries(comparisonResult.advancedRAG.individual_metric_details).map(([metric, details]) => (
-                                <Card key={metric} className="relative overflow-hidden bg-white/90 dark:bg-slate-800/90 border-2 border-slate-200/60 dark:border-slate-700/60 shadow-lg hover:shadow-xl transition-all duration-300 backdrop-blur-sm">
-                                  <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-purple-600/10 dark:from-purple-400/5 dark:to-purple-300/10" />
-                                  <CardContent className="relative p-5 space-y-4">
+                                <Card key={metric} className="bg-white dark:bg-gray-800/50 border border-gray-200/50 dark:border-gray-700/50">
+                                  <CardContent className="p-4 space-y-3">
                                     <div className="flex items-center justify-between">
-                                      <h5 className="text-base font-bold text-slate-700 dark:text-slate-300 capitalize tracking-wide">
+                                      <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize">
                                         {metric.replace('_', ' ')}
                                       </h5>
-                                      <Badge variant="outline" className="text-sm font-bold text-emerald-600 dark:text-emerald-400 border-2 border-emerald-500/40 bg-emerald-50/80 dark:bg-emerald-950/40 px-3 py-1">
+                                      <Badge variant="outline" className="text-xs font-bold text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
                                         {(details.score * 100).toFixed(1)}%
                                       </Badge>
                                     </div>
-                                    <div className="h-px bg-gradient-to-r from-transparent via-slate-300/50 to-transparent" />
-                                    <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                                    <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
                                       {details.feedback}
                                     </p>
-                                    <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pt-3 border-t border-slate-200/50 dark:border-slate-700/50">
-                                      <div className="flex items-center gap-2">
-                                        <Clock className="h-3 w-3" />
-                                        <span>Eval time:</span>
-                                      </div>
-                                      <span className="font-mono font-semibold">{details.evaluation_time.toFixed(2)}s</span>
+                                    <div className="text-xs text-gray-400 dark:text-gray-500 border-t border-gray-200/50 dark:border-gray-700/50 pt-2">
+                                      Evaluation time: {details.evaluation_time.toFixed(2)}s
                                     </div>
                                   </CardContent>
                                 </Card>
@@ -1068,22 +984,14 @@ export default function EvaluationPage() {
                       </CardContent>
                     </Card>
                   ) : (
-                    <Card className="relative overflow-hidden border-2 border-slate-200/60 bg-gradient-to-br from-slate-50/40 to-slate-100/30 dark:from-slate-950/40 dark:to-slate-900/30 dark:border-slate-700/40 shadow-lg">
-                      <div className="absolute inset-0 bg-gradient-to-br from-transparent via-slate-500/5 to-slate-600/10 dark:from-transparent dark:via-slate-400/5 dark:to-slate-300/5" />
-                      <CardContent className="relative text-center py-16">
-                        <div className="space-y-6">
-                          <div className="flex justify-center">
-                            <div className="flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-slate-500/20 to-slate-600/30 border-2 border-slate-500/40">
-                              <AlertCircle className="h-10 w-10 text-slate-500 dark:text-slate-400" />
-                            </div>
-                          </div>
-                          <div className="space-y-3 max-w-md mx-auto">
-                            <h3 className="text-xl font-bold text-slate-700 dark:text-slate-300">No Individual Feedback Available</h3>
-                            <p className="text-base text-slate-600 dark:text-slate-400 leading-relaxed">
-                              Individual metric feedback is only available when using the Individual Metrics evaluation method. 
-                              Please run the evaluation with Individual Metrics enabled to see detailed feedback.
-                            </p>
-                          </div>
+                    <Card className="border border-gray-200/50">
+                      <CardContent className="text-center py-8">
+                        <div className="text-muted-foreground">
+                          <AlertCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                          <h3 className="text-lg font-semibold mb-2">No Individual Feedback Available</h3>
+                          <p className="text-sm">
+                            Individual metric feedback is only available when using the Individual Metrics evaluation method.
+                          </p>
                         </div>
                       </CardContent>
                     </Card>

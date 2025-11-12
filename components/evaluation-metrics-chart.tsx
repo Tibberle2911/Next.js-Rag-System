@@ -233,7 +233,8 @@ export default function EvaluationMetricsChart({ basicRAG, advancedRAG, evaluati
     // Create data paths for both RAG systems
     const basicPathData = validMetrics.map((metric, i) => {
       const angle = angleSlice * i - Math.PI / 2
-      const value = basicRAG[metric.key] || 0
+      const rawValue = basicRAG[metric.key]
+      const value = typeof rawValue === 'number' ? Math.max(0, Math.min(1, rawValue)) : 0
       const x = Math.cos(angle) * rScale(value)
       const y = Math.sin(angle) * rScale(value)
       return [x, y]
@@ -241,7 +242,8 @@ export default function EvaluationMetricsChart({ basicRAG, advancedRAG, evaluati
 
     const advancedPathData = validMetrics.map((metric, i) => {
       const angle = angleSlice * i - Math.PI / 2
-      const value = advancedRAG[metric.key] || 0
+      const rawValue = advancedRAG[metric.key]
+      const value = typeof rawValue === 'number' ? Math.max(0, Math.min(1, rawValue)) : 0
       const x = Math.cos(angle) * rScale(value)
       const y = Math.sin(angle) * rScale(value)
       return [x, y]
@@ -271,8 +273,10 @@ export default function EvaluationMetricsChart({ basicRAG, advancedRAG, evaluati
 
     // Add Basic RAG points
     basicPathData.forEach((point, i) => {
+      if (!point || !validMetrics[i]) return
       const metric = validMetrics[i]
-      const value = basicRAG[metric.key] || 0
+      const rawValue = basicRAG[metric.key]
+      const value = typeof rawValue === 'number' ? rawValue : 0
       g.append("circle")
         .attr("cx", point[0])
         .attr("cy", point[1])
@@ -328,8 +332,10 @@ export default function EvaluationMetricsChart({ basicRAG, advancedRAG, evaluati
 
     // Add Advanced RAG points
     advancedPathData.forEach((point, i) => {
+      if (!point || !validMetrics[i]) return
       const metric = validMetrics[i]
-      const value = advancedRAG[metric.key] || 0
+      const rawValue = advancedRAG[metric.key]
+      const value = typeof rawValue === 'number' ? rawValue : 0
       g.append("circle")
         .attr("cx", point[0])
         .attr("cy", point[1])
@@ -453,8 +459,8 @@ export default function EvaluationMetricsChart({ basicRAG, advancedRAG, evaluati
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {metricsToShow.map((metric) => {
-                const basicValue = basicRAG[metric.key] || 0
-                const advancedValue = advancedRAG[metric.key] || 0
+                const basicValue = (typeof basicRAG[metric.key] === 'number' ? basicRAG[metric.key] : 0) as number
+                const advancedValue = (typeof advancedRAG[metric.key] === 'number' ? advancedRAG[metric.key] : 0) as number
                 const improvement = advancedValue - basicValue
                 const categoryColor = metric.category === 'individual' ? 'border-purple-500/30' : 'border-blue-500/30'
                 const categoryBg = metric.category === 'individual' ? 'bg-purple-50 dark:bg-purple-950/20' : 'bg-blue-50 dark:bg-blue-950/20'

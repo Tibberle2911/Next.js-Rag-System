@@ -436,23 +436,35 @@ export default function D3Visualizations({ results, summary }: Props) {
         // Add tooltip
         const tooltip = svg.append("g").attr("class", "tooltip")
         
-        const rect = tooltip.append("rect")
-          .attr("x", +d3.select(this).attr("x") + xScale.bandwidth()/2 - 40)
-          .attr("y", +d3.select(this).attr("y") - 35)
-          .attr("width", 80)
-          .attr("height", 25)
-          .attr("fill", "#1f2937")
-          .attr("rx", 4)
-          .attr("opacity", 0.9)
+        const currentBar = d3.select(this)
+        const barX = currentBar.attr("x")
+        const barY = currentBar.attr("y")
+        
+        if (barX && barY) {
+          const rect = tooltip.append("rect")
+            .attr("x", +barX + xScale.bandwidth()/2 - 40)
+            .attr("y", +barY - 35)
+            .attr("width", 80)
+            .attr("height", 25)
+            .attr("fill", "#1f2937")
+            .attr("rx", 4)
+            .attr("opacity", 0.9)
+        }
 
-        tooltip.append("text")
-          .attr("x", +d3.select(this).attr("x") + xScale.bandwidth()/2)
-          .attr("y", +d3.select(this).attr("y") - 20)
-          .attr("text-anchor", "middle")
-          .style("font-size", "12px")
-          .style("fill", "white")
-          .style("font-weight", "600")
-          .text(`${(d.average * 100).toFixed(1)}%`)
+          const currentBar = d3.select(this)
+          const barX = currentBar.attr("x")
+          const barY = currentBar.attr("y")
+          
+          if (barX && barY) {
+            tooltip.append("text")
+              .attr("x", +barX + xScale.bandwidth()/2)
+              .attr("y", +barY - 20)
+              .attr("text-anchor", "middle")
+              .style("font-size", "12px")
+              .style("fill", "white")
+              .style("font-weight", "600")
+              .text(`${(d.average * 100).toFixed(1)}%`)
+          }
       })
       .on("mouseout", function() {
         d3.select(this).attr("opacity", 0.8)
