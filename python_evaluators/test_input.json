@@ -1,0 +1,5 @@
+{
+  "question": "What is machine learning?",
+  "answer": "Machine learning is a subset of AI that enables computers to learn from data without explicit programming",
+  "rag_mode": "basic"
+}

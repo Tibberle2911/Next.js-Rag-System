@@ -1,0 +1,25 @@
+# Python dependencies for authentic framework evaluation
+# RAGAS framework for RAG evaluation
+ragas>=0.1.0
+datasets>=2.14.0
+
+# LangChain framework for evaluation
+langchain>=0.1.0
+langchain-community>=0.0.20
+langchain-groq>=0.1.0
+langchain-huggingface>=1.0.0
+
+# Core dependencies
+openai>=1.0.0
+sentence-transformers>=2.2.0
+transformers>=4.30.0
+torch>=2.0.0
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Embeddings
+huggingface-hub>=0.16.0
+
+# Additional utilities
+python-dotenv>=1.0.0
+asyncio-throttle>=1.0.0

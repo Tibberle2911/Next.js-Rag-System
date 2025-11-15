@@ -1,11 +1,45 @@
 /**
  * Groq Integration - LLM Response Generation
  * Uses llama-3.1-8b-instant model (override with GROQ_CHAT_MODEL)
+ * Enhanced with rate limiting and token usage monitoring
  */
 
 import Groq from "groq-sdk"
+import { GoogleGenAI } from "@google/genai"
 
 let groqClient: Groq | null = null
+
+// Support optional Gemini provider for text generation (used when USE_GEMINI='true')
+const USE_GEMINI = process.env.USE_GEMINI === 'true'
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY || ''
+
+// Rate limiting configuration
+interface RateLimitConfig {
+  tokensPerMinute: number
+  maxRetries: number
+  baseDelayMs: number
+  currentUsage: number
+  lastResetTime: number
+  requestQueue: Array<() => Promise<any>>
+  isProcessing: boolean
+}
+
+// Initialize rate limiting config based on Groq's limits
+const rateLimitConfig: RateLimitConfig = {
+  tokensPerMinute: 5500, // Conservative limit (below the 6000 limit)
+  maxRetries: 5,
+  baseDelayMs: 3000, // 3 seconds base delay
+  currentUsage: 0,
+  lastResetTime: Date.now(),
+  requestQueue: [],
+  isProcessing: false
+}
+
+// Token usage estimation
+function estimateTokens(text: string): number {
+  // Rough estimation: 1 token ≈ 4 characters for English text
+  return Math.ceil(text.length / 4)
+}
 
 export function getGroqClient(): Groq {
   if (!groqClient) {
@@ -26,6 +60,11 @@ export function formatResponse(text: string): string {
   if (!text) return text
 
   let content = text.trim()
+
+  // Remove surrounding quotes if present
+  if ((content.startsWith('"') && content.endsWith('"')) || (content.startsWith("'") && content.endsWith("'"))) {
+    content = content.slice(1, -1).trim()
+  }
 
   // Normalize bullet points
   content = content.replace(/^\s*[•*-]\s+/gm, "- ")
@@ -71,12 +110,123 @@ export interface GenerateResponseOptions {
   question: string
   context: string
   canonicalName?: string
+  // Optional provider hint: 'gemini' to force Gemini, 'groq' to force Groq SDK
+  provider?: 'gemini' | 'groq'
 }
 
 /**
- * Generate response using Groq LLM with rate limiting
+ * Generate response using Groq LLM with comprehensive rate limiting
  */
 export async function generateResponse(options: GenerateResponseOptions): Promise<string> {
+  // Check if Gemini should be used (either via provider option or USE_GEMINI env var)
+  const shouldUseGemini = options.provider === 'gemini' || USE_GEMINI
+  
+  if (shouldUseGemini) {
+    const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY || ''
+    if (!GEMINI_KEY) {
+      console.warn('⚠️ GEMINI_API_KEY not set; falling back to Groq provider')
+    } else {
+      try {
+        console.log('🤖 Using Gemini API for text generation...')
+        return await geminiGenerate(options, GEMINI_KEY)
+      } catch (err) {
+        // Log and continue to fallback to Groq
+        console.error('❌ Gemini generation failed, falling back to Groq:', err)
+      }
+    }
+    // If no API key or geminiGenerate failed, continue to Groq path below
+  }
+
+  return new Promise((resolve, reject) => {
+    // Add request to queue
+    rateLimitConfig.requestQueue.push(async () => {
+      try {
+        const result = await executeGroqRequest(options)
+        resolve(result)
+      } catch (error) {
+        reject(error)
+      }
+    })
+    
+    // Process queue
+    processRequestQueue()
+  })
+}
+
+/**
+ * Gemini text generation via Google's Generative API (simple wrapper)
+ * This runs when `USE_GEMINI=true` and reads the API key from `GEMINI_API_KEY` or `GROQ_API_KEY`.
+ * Note: This implementation uses the HTTP REST endpoint and a simple prompt-based generate call.
+ */
+async function geminiGenerate(options: GenerateResponseOptions, apiKey: string): Promise<string> {
+  const model = process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest'
+
+  // Build a compact prompt following existing system guidance
+  const systemInstructions = `You are an AI digital twin responding in first person. Use only the provided context unless general knowledge is trivial. Do not provide personal contact or sensitive information. Write concise, recruiter-ready answers. Keep answers between 50 and 200 words. CRITICAL RULES: (1) Use ONLY first-person singular ("I", "my", "me") - NEVER "we", "our", "us". (2) NO explicit STAR markers like "The result?", "My task was", "The situation was" - create natural flowing responses instead. (3) If context contains "My name is [Your Name]" or similar, extract and use the ACTUAL name naturally (e.g., "My name is John" → "I'm John").`
+  const promptText = `${systemInstructions}\n\nContext:\n${options.context}\n\nQuestion: ${options.question}\n\nProvide a helpful, professional, conversational response:`
+
+  try {
+    const client = new GoogleGenAI({ apiKey })
+    const modelName = model
+    
+    // Use the SDK's generateContent API with proper parameters
+    const resp: any = await client.models.generateContent({
+      model: modelName,
+      contents: promptText
+    })
+
+    // Extract text from response
+    const text = resp?.text || resp?.output?.[0]?.content || resp?.candidates?.[0]?.content || ''
+    return formatResponse(String(text || ''))
+  } catch (err: any) {
+    console.error('❌ Gemini generation failed (SDK):', err)
+    throw err
+  }
+}
+
+/**
+ * Process queued requests with rate limiting
+ */
+async function processRequestQueue(): Promise<void> {
+  if (rateLimitConfig.isProcessing || rateLimitConfig.requestQueue.length === 0) {
+    return
+  }
+  
+  rateLimitConfig.isProcessing = true
+  
+  while (rateLimitConfig.requestQueue.length > 0) {
+    // Reset usage counter every minute
+    const now = Date.now()
+    if (now - rateLimitConfig.lastResetTime > 60000) {
+      rateLimitConfig.currentUsage = 0
+      rateLimitConfig.lastResetTime = now
+      console.log('🔄 Token usage reset for new minute')
+    }
+    
+    // Check if we're approaching the limit
+    if (rateLimitConfig.currentUsage > rateLimitConfig.tokensPerMinute * 0.8) {
+      const waitTime = 60000 - (now - rateLimitConfig.lastResetTime)
+      console.log(`⏳ Approaching rate limit (${rateLimitConfig.currentUsage}/${rateLimitConfig.tokensPerMinute}), waiting ${waitTime}ms`)
+      await new Promise(resolve => setTimeout(resolve, waitTime))
+      rateLimitConfig.currentUsage = 0
+      rateLimitConfig.lastResetTime = Date.now()
+    }
+    
+    const request = rateLimitConfig.requestQueue.shift()
+    if (request) {
+      await request()
+      // Add small delay between requests
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+  }
+  
+  rateLimitConfig.isProcessing = false
+}
+
+/**
+ * Execute actual Groq API request with retry logic
+ */
+async function executeGroqRequest(options: GenerateResponseOptions): Promise<string> {
   const client = getGroqClient()
   const chatModel = process.env.GROQ_CHAT_MODEL || "llama-3.1-8b-instant"
 
@@ -101,18 +251,29 @@ ${options.context}
 
 Question: ${options.question}
 
-Provide a helpful, professional response:`
+IMPORTANT RULES:
+1. Use ONLY first-person singular ("I", "my", "me") - NEVER "we", "our", "us"
+2. NO explicit STAR format markers (avoid "The result?", "My task was", "The situation was")
+3. Create natural, flowing responses that tell a cohesive story
+4. Focus on individual contributions and achievements
+5. If the context contains "My name is [Your Name]" or similar, extract and use the ACTUAL name naturally
+6. Replace placeholder text like "[Your Name]" with the real name from the context
 
-  // Rate limiting with retry logic
-  const maxRetries = 3
-  const baseDelay = 5000 // 5 seconds base delay
+Provide a helpful, professional, conversational response:`
 
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
+  // Estimate token usage for this request
+  const systemContent = systemLines.join(" ")
+  const estimatedTokens = estimateTokens(systemContent + prompt) + 200 // Add buffer for response
+  
+  console.log(`🔍 Estimated tokens for request: ${estimatedTokens}, Current usage: ${rateLimitConfig.currentUsage}/${rateLimitConfig.tokensPerMinute}`)
+
+  // Enhanced retry logic with exponential backoff
+  for (let attempt = 0; attempt < rateLimitConfig.maxRetries; attempt++) {
     try {
-      // Add delay before each attempt (except the first)
+      // Add progressive delay for retries
       if (attempt > 0) {
-        const delayTime = baseDelay * Math.pow(2, attempt - 1) // Exponential backoff
-        console.log(`⏳ Rate limit retry ${attempt}/${maxRetries}, waiting ${delayTime}ms...`)
+        const delayTime = rateLimitConfig.baseDelayMs * Math.pow(2, attempt - 1)
+        console.log(`⏳ Rate limit retry ${attempt}/${rateLimitConfig.maxRetries}, waiting ${delayTime}ms...`)
         await new Promise(resolve => setTimeout(resolve, delayTime))
       }
 
@@ -121,37 +282,64 @@ Provide a helpful, professional response:`
         messages: [
           {
             role: "system",
-            content: systemLines.join(" "),
+            content: systemContent,
           },
           {
             role: "user",
             content: prompt,
           },
         ],
-        temperature: 0.7,
-        max_tokens: 750,
+        temperature: options.question.includes('metrics') || options.question.includes('Evaluate') ? 0.1 : 0.7, // Lower temperature for evaluations
+        max_tokens: options.question.includes('metrics') || options.question.includes('Evaluate') ? 300 : 200, // More tokens for evaluations
+        response_format: options.question.includes('ONLY valid JSON') ? { "type": "json_object" } : undefined,
       })
+
+      // Update token usage tracking
+      const actualTokens = completion.usage?.total_tokens || estimatedTokens
+      rateLimitConfig.currentUsage += actualTokens
+      console.log(`✅ Request completed. Tokens used: ${actualTokens}, Total usage: ${rateLimitConfig.currentUsage}/${rateLimitConfig.tokensPerMinute}`)
 
       const responseText = completion.choices[0].message.content || ""
       return formatResponse(responseText)
       
     } catch (error: any) {
-      console.error(`Groq API error (attempt ${attempt + 1}):`, error)
+      console.error(`Groq API error (attempt ${attempt + 1}):`, {
+        message: error.message,
+        status: error.status,
+        code: error.code,
+        type: error.type
+      })
       
-      // Check if it's a rate limit error
+      // Enhanced rate limit detection
       const isRateLimit = error?.message?.includes('429') || 
                          error?.status === 429 || 
-                         error?.message?.includes('rate_limit_exceeded')
+                         error?.message?.includes('rate_limit') ||
+                         error?.code === 'rate_limit_exceeded' ||
+                         error?.type === 'tokens'
       
-      if (isRateLimit && attempt < maxRetries - 1) {
-        console.log(`🔄 Rate limit detected, retrying in ${baseDelay * Math.pow(2, attempt)}ms...`)
-        continue // Retry the loop
-      } else {
-        // Not a rate limit error or max retries exceeded
-        throw error
+      if (isRateLimit) {
+        // For rate limits, wait longer and reset usage tracking
+        if (attempt < rateLimitConfig.maxRetries - 1) {
+          const waitTime = Math.max(5000, rateLimitConfig.baseDelayMs * Math.pow(2, attempt))
+          console.log(`🚫 Rate limit hit! Waiting ${waitTime}ms before retry...`)
+          
+          // Reset usage and wait for next minute
+          rateLimitConfig.currentUsage = rateLimitConfig.tokensPerMinute
+          await new Promise(resolve => setTimeout(resolve, waitTime))
+          continue
+        }
+      } else if (attempt < rateLimitConfig.maxRetries - 1) {
+        // For other errors, shorter retry delay
+        const shortDelay = 1000 * (attempt + 1)
+        console.log(`🔄 Non-rate-limit error, retrying in ${shortDelay}ms...`)
+        await new Promise(resolve => setTimeout(resolve, shortDelay))
+        continue
       }
+      
+      // Max retries exceeded or non-retryable error
+      throw new Error(`Groq API failed after ${attempt + 1} attempts: ${error.message}`)
     }
   }
 
-  throw new Error(`Failed after ${maxRetries} attempts due to rate limiting`)
+  throw new Error(`Failed after ${rateLimitConfig.maxRetries} attempts`)
 }

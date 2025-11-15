@@ -6,6 +6,8 @@ import { usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { BarChart3, MessageSquare, TestTube, Sparkles, Zap, Settings, Github, Menu, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { usePuterAuth } from '@/lib/puter-auth'
+import { LogOut } from 'lucide-react'
 
 export function Header() {
   const pathname = usePathname()
@@ -50,6 +52,23 @@ export function Header() {
     }
   ]
 
+  const { isAuthenticated, user, logout, signOut, isLoading } = usePuterAuth() as any
+  const [logoutPending, setLogoutPending] = useState(false)
+
+  async function handleLogout() {
+    if (logoutPending) return
+    setLogoutPending(true)
+    try {
+      const fn = typeof logout === 'function' ? logout : (typeof signOut === 'function' ? signOut : null)
+      if (!fn) throw new Error('Logout function unavailable in auth context')
+      await fn()
+    } catch (e) {
+      console.error('Logout failed:', e)
+    } finally {
+      setLogoutPending(false)
+    }
+  }
+
   return (
     <header className="sticky top-0 z-50 border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="max-w-7xl mx-auto px-4 py-3 sm:px-6 lg:px-8">
@@ -70,7 +89,6 @@ export function Header() {
             {navigationItems.map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href
-              
               return (
                 <Link key={item.href} href={item.href}>
                   <Button 
@@ -91,6 +109,18 @@ export function Header() {
                 </Link>
               )
             })}
+            {isAuthenticated && (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={logoutPending || isLoading}
+                onClick={handleLogout}
+                className="relative flex items-center gap-1.5 px-2 xl:px-3 py-2 h-8 xl:h-9 hover:bg-destructive/10 text-destructive"
+              >
+                <LogOut className="h-3.5 w-3.5 xl:h-4 xl:w-4" />
+                <span className="font-medium text-xs xl:text-sm">{logoutPending ? 'Logging out...' : (user?.username ? `Logout (${user.username})` : 'Logout')}</span>
+              </Button>
+            )}
           </nav>
 
           {/* Mobile Menu Button */}
@@ -129,6 +159,19 @@ export function Header() {
                 )
               })}
             </nav>
+            {isAuthenticated && (
+              <div className="mt-4 flex justify-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={logoutPending || isLoading}
+                  onClick={handleLogout}
+                  className="text-destructive"
+                >
+                  <LogOut className="h-4 w-4 mr-2" /> {logoutPending ? 'Logging out...' : 'Logout'}
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>

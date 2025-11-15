@@ -39,7 +39,7 @@ from ragas.metrics import (
 
 # LangChain Components
 from langchain_core.documents import Document
-from langchain_groq import ChatGroq
+from google import genai as GoogleGenAI
 
 # Data Analysis & Visualization
 import matplotlib.pyplot as plt
@@ -66,7 +66,7 @@ try:
 except ImportError:
     LANGCHAIN_AVAILABLE = False
     INDIVIDUAL_METRICS_AVAILABLE = False
-    print("⚠️ LangChain evaluator not available, falling back to GROQ evaluation")
+    print("⚠️ LangChain evaluator not available, falling back to Gemini evaluation")
 
 @dataclass
 class RAGTestCase:
@@ -92,21 +92,26 @@ class RAGEvaluationResult:
     overall_score: float
 
 class RAGEvaluator:
-    """Comprehensive RAG system evaluator with LangChain integration"""
+    """Comprehensive RAG system evaluator with Gemini integration"""
     
-    def __init__(self, groq_api_key: str):
-        self.groq_api_key = groq_api_key
-        self.llm = ChatGroq(
-            api_key=groq_api_key,
-            model_name="llama-3.1-8b-instant",
-            temperature=0.3  # Higher temperature for evaluation variability
-        )
+    def __init__(self, gemini_api_key: str, model_name: str = "gemini-2.0-flash-lite"):
+        """
+        Initialize evaluator with Gemini API
+        
+        Args:
+            gemini_api_key: Gemini API key
+            model_name: One of 'gemini-2.0-flash-lite', 'gemini-2.0-flash', 
+                       'gemini-2.5-flash-lite', 'gemini-2.5-flash'
+        """
+        self.gemini_api_key = gemini_api_key
+        self.model_name = model_name
+        self.client = GoogleGenAI.Client(api_key=gemini_api_key)
         self.results: List[RAGEvaluationResult] = []
         
         # Initialize individual metric evaluator for more accurate assessment
         if INDIVIDUAL_METRICS_AVAILABLE:
             try:
-                self.individual_evaluator = IndividualMetricRAGEvaluator(groq_api_key)
+                self.individual_evaluator = IndividualMetricRAGEvaluator(gemini_api_key)
                 print("✅ Individual metric evaluator initialized successfully")
             except Exception as e:
                 print(f"⚠️ Individual metric evaluator initialization failed: {e}")
@@ -117,7 +122,7 @@ class RAGEvaluator:
         # Initialize LangChain evaluator if available
         if LANGCHAIN_AVAILABLE:
             try:
-                self.langchain_evaluator = LangChainRAGEvaluator(groq_api_key)
+                self.langchain_evaluator = LangChainRAGEvaluator(gemini_api_key)
                 print("✅ LangChain evaluator initialized successfully")
             except Exception as e:
                 print(f"⚠️ LangChain evaluator initialization failed: {e}")
@@ -455,8 +460,8 @@ class RAGEvaluator:
                 print("🔬 Using LangChain evaluation framework...")
                 individual_results = await self._langchain_based_evaluation(questions, answers, contexts, ground_truths)
             else:
-                print("🤖 Using GROQ-based evaluation (LangChain not available)...")
-                individual_results = await self._groq_based_evaluation(questions, answers, contexts, ground_truths)
+                print("🤖 Using Gemini-based evaluation (LangChain not available)...")
+                individual_results = await self._gemini_based_evaluation(questions, answers, contexts, ground_truths)
         except Exception as e:
             print(f"⚠️ Primary evaluation failed: {e}")
             print("📊 Using manual evaluation fallback...")
@@ -590,10 +595,10 @@ class RAGEvaluator:
         print(f"🎯 LangChain evaluation complete - {len(individual_results)} individual results generated")
         return individual_results
 
-    async def _groq_based_evaluation(self, questions: List[str], answers: List[str], 
+    async def _gemini_based_evaluation(self, questions: List[str], answers: List[str], 
                                    contexts: List[List[str]], ground_truths: List[str]) -> List[Dict[str, float]]:
-        """GROQ-powered evaluation when LangChain fails - returns individual scores for each test case"""
-        print("🤖 Running GROQ-based evaluation...")
+        """Gemini-powered evaluation - returns individual scores for each test case"""
+        print(f"🤖 Running Gemini-based evaluation using {self.model_name}...")
         
         # Add initial delay to avoid hitting rate limits immediately
         await asyncio.sleep(2.0)
@@ -644,22 +649,31 @@ Provide realistic scores - most should be between 0.3-0.9. Return ONLY this JSON
 {{"context_precision": 0.X, "context_recall": 0.X, "context_relevancy": 0.X, "answer_relevancy": 0.X, "faithfulness": 0.X, "answer_correctness": 0.X}}
 """
                 
-                # Get GROQ evaluation with rate limiting and retry logic
+                # Get Gemini evaluation with rate limiting and retry logic
                 max_retries = 3
                 retry_count = 0
                 response = None
                 
                 while retry_count < max_retries:
                     try:
-                        response = await self.llm.ainvoke(eval_prompt)
-                        eval_text = response.content.strip()
+                        # Call Gemini API
+                        response = await asyncio.to_thread(
+                            self.client.models.generate_content,
+                            model=self.model_name,
+                            contents=eval_prompt,
+                            config={
+                                'temperature': 0.3,
+                                'max_output_tokens': 500
+                            }
+                        )
+                        eval_text = response.text.strip()
                         break  # Success, exit retry loop
                         
                     except Exception as api_error:
                         error_msg = str(api_error)
-                        if '429' in error_msg or 'rate_limit_exceeded' in error_msg:
+                        if '429' in error_msg or 'rate_limit' in error_msg.lower():
                             retry_count += 1
-                            wait_time = 25 + (retry_count * 15)  # 25s, 40s, 55s
+                            wait_time = 10 + (retry_count * 5)  # 10s, 15s, 20s
                             print(f"    ⏳ Rate limit hit for question {i+1}, waiting {wait_time}s (attempt {retry_count}/{max_retries})")
                             await asyncio.sleep(wait_time)
                             if retry_count >= max_retries:
@@ -698,10 +712,10 @@ Provide realistic scores - most should be between 0.3-0.9. Return ONLY this JSON
                                 continue
                     
                     if eval_scores and isinstance(eval_scores, dict):
-                        # Check if all scores are zero (GROQ evaluation failure)
+                        # Check if all scores are zero (Gemini evaluation failure)
                         all_scores = [float(score) for score in eval_scores.values() if isinstance(score, (int, float))]
                         if len(all_scores) == 7 and sum(all_scores) == 0.0:
-                            print(f"    ⚠️ Question {i+1}: GROQ returned all zeros, using fallback")
+                            print(f"    ⚠️ Question {i+1}: Gemini returned all zeros, using fallback")
                             eval_scores = None  # Force fallback
                         
                         # Update result with parsed scores
@@ -720,7 +734,7 @@ Provide realistic scores - most should be between 0.3-0.9. Return ONLY this JSON
                             else:
                                 print(f"    ⚠️ Question {i+1}: Only {updated_count}/7 metrics parsed successfully")
                     else:
-                        print(f"    ⚠️ Question {i+1}: Could not extract valid JSON from GROQ response")
+                        print(f"    ⚠️ Question {i+1}: Could not extract valid JSON from Gemini response")
                             
                 except Exception as parse_error:
                     print(f"    ⚠️ Question {i+1}: JSON parsing error: {parse_error}")
@@ -743,25 +757,25 @@ Provide realistic scores - most should be between 0.3-0.9. Return ONLY this JSON
                     result['answer_relevancy'] = round(max(0.3, base_score), 3)
                     result['faithfulness'] = round(max(0.3, base_score), 3)
                     result['answer_correctness'] = round(max(0.2, base_score), 3)
-                    result['error'] = 'GROQ evaluation parsing failed - using content-based fallback'
+                    result['error'] = 'Gemini evaluation parsing failed - using content-based fallback'
                     
                     # Ensure all scores are in realistic range (0.2-0.9)
                     for metric in ['context_precision', 'context_recall', 'context_relevancy', 'answer_relevancy', 'faithfulness', 'answer_correctness']:
                         result[metric] = max(0.2, min(0.9, result[metric]))
                         
             except Exception as e:
-                print(f"    ❌ GROQ evaluation error for question {i+1}: {e}")
-                # When GROQ fails, use error result
+                print(f"    ❌ Gemini evaluation error for question {i+1}: {e}")
+                # When Gemini fails, use error result
                 result = error_result.copy()
-                result['error'] = f'GROQ evaluation failed: {str(e)}'
+                result['error'] = f'Gemini evaluation failed: {str(e)}'
                 print(f"    ⚠️ Question {i+1}: Using error fallback due to exception")
             
             individual_results.append(result)
             
-            # Much longer delay to avoid rate limits (increased to 6s)
-            await asyncio.sleep(6.0)
+            # Delay to avoid rate limits
+            await asyncio.sleep(3.0)
         
-        print(f"🎯 GROQ evaluation complete - {len(individual_results)} individual results generated")
+        print(f"🎯 Gemini evaluation complete - {len(individual_results)} individual results generated")
         return individual_results
     
     def _manual_evaluation_fallback(self, questions: List[str], answers: List[str], 
@@ -782,7 +796,7 @@ Provide realistic scores - most should be between 0.3-0.9. Return ONLY this JSON
         }
         
         print("⚠️ WARNING: Returning baseline scores due to evaluation system failure")
-        print("🔧 Please check your GROQ API key and network connectivity")
+        print("🔧 Please check your GEMINI API key and network connectivity")
         
         return fallback_scores
     
@@ -1101,16 +1115,21 @@ async def main():
     """Main evaluation pipeline"""
     
     # Load environment
-    groq_api_key = os.getenv("GROQ_API_KEY")
-    if not groq_api_key:
-        print("❌ GROQ_API_KEY not found in environment variables")
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_api_key:
+        print("❌ GEMINI_API_KEY not found in environment variables")
         return
+    
+    # Model selection - can be changed to any of the 4 models
+    # Options: 'gemini-2.0-flash-lite', 'gemini-2.0-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-flash'
+    model_name = os.getenv("GEMINI_EVAL_MODEL", "gemini-2.0-flash-lite")
     
     print("🔬 RAG System Evaluation Framework")
     print("=" * 50)
+    print(f"📊 Using Gemini model: {model_name}")
     
     # Initialize evaluator
-    evaluator = RAGEvaluator(groq_api_key)
+    evaluator = RAGEvaluator(gemini_api_key, model_name)
     
     # Run evaluation
     results_df = await evaluator.run_comprehensive_evaluation()

@@ -7,21 +7,30 @@ import { SourcesPanel, type Source } from "@/components/sources-panel"
 import { InputForm } from "@/components/input-form"
 import { LoadingSpinner } from "@/components/loading-spinner"
 import { RAGModeSelector } from "@/components/rag-mode-selector"
+import { PuterSignIn } from "@/components/puter-signin"
+import { usePuterAuth } from "@/lib/puter-auth"
 import { ragQuery, RAGMode } from "@/app/actions"
 import { AdvancedRAGConfig, DEFAULT_ADVANCED_CONFIG } from "@/lib/advanced-rag-client"
+import { streamPuterAIResponse, streamPuterAIWithRetrieval } from "@/lib/puter-ai-client"
+import { streamAdvancedPuterRAG } from "@/lib/advanced-puter-rag-client"
+import { getCanonicalName } from "@/lib/canonical-name"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertCircle, Settings, MessageSquare } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
 export default function Page() {
+  const { isAuthenticated, isLoading: authLoading, getAuthToken, getPuterClient } = usePuterAuth()
+  
+  // Always require authentication - no fallback to Gemini/Groq
+  // User MUST sign in with Puter to use the application
+  const requiresAuth = !isAuthenticated
+  const canonicalName = getCanonicalName()
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "0",
       role: "assistant",
-      content:
-        "Hi! I'm your Digital Twin assistant. Ask me about my experience, skills, projects, or career goals. I can provide detailed information about my professional background.",
-      // Use a stable timestamp for prerender; update on mount
+      content: `Hi! I'm virtual ${canonicalName}. Ask me about my experience, skills, projects, or career goals. I can provide detailed information about my professional background.`,
       timestamp: new Date(0),
     },
   ])
@@ -59,33 +68,92 @@ export default function Page() {
     setIsLoading(true)
 
     try {
-      const result = await ragQuery(question, ragMode, advancedConfig)
+      // Check if user is authenticated
+      if (!isAuthenticated) {
+        throw new Error('Please sign in with Puter to use the Digital Twin')
+      }
 
-      if (result.error) {
-        setError(result.error)
-        const errorMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: `Sorry, I encountered an error: ${result.error}. Please try again.`,
-          timestamp: new Date(),
+      // Prepare a streaming assistant message placeholder
+      const assistantId = (Date.now() + 1).toString()
+      const assistantMessage: Message = {
+        id: assistantId,
+        role: "assistant",
+        content: "",
+        timestamp: new Date(),
+      }
+      setMessages((prev) => [...prev, assistantMessage])
+
+      try {
+        // Ensure Puter SDK is ready
+        if (typeof (window as any).puter?.ai?.chat !== 'function') {
+          throw new Error('Puter SDK not available or user not authenticated. Please sign in and refresh the page.')
         }
-        setMessages((prev) => [...prev, errorMessage])
-      } else {
-        setSources(result.sources)
-        
-        // Add metadata to response if available
-        let responseContent = result.answer || "I couldn't generate a response. Please try again."
-        if (result.metadata?.techniquesUsed && result.metadata.techniquesUsed.length > 0) {
-          responseContent += `\n\n*Enhanced using: ${result.metadata.techniquesUsed.join(", ")}*`
+
+        if (ragMode === "advanced") {
+          // Use advanced Puter RAG pipeline (multi-query, fusion, etc.) then stream final answer
+          const { final } = await streamAdvancedPuterRAG({
+            question,
+            config: advancedConfig as any,
+            canonicalName,
+            temperature: 0.7,
+            maxTokens: 1500,
+            topK: 8,
+            onContext: (ctxSources) => setSources(ctxSources),
+            onChunk: (delta) => {
+              setMessages((prev) => prev.map(m => {
+                if (m.id === assistantId) {
+                  return { ...m, content: (m.content || "") + delta }
+                }
+                return m
+              }))
+            },
+            onDone: () => {},
+          })
+          console.log('✅ Streaming (advanced) finished, length:', final.length)
+        } else {
+          // Basic mode: perform retrieval inside streaming pipeline
+          const { final } = await streamPuterAIWithRetrieval({
+            question,
+            canonicalName,
+            temperature: 0.7,
+            maxTokens: 1500,
+            topK: 8,
+            onContext: (ctxSources) => setSources(ctxSources),
+            onChunk: (delta) => {
+              setMessages((prev) => prev.map(m => {
+                if (m.id === assistantId) {
+                  return { ...m, content: (m.content || "") + delta }
+                }
+                return m
+              }))
+            },
+            onDone: () => {},
+          })
+          console.log('✅ Streaming (basic) finished, length:', final.length)
         }
-        
-        const assistantMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: responseContent,
-          timestamp: new Date(),
+      } catch (puterError: any) {
+        console.error('❌ Puter AI streaming failed:', puterError)
+        let errMsg = (puterError && (puterError.message || (typeof puterError === 'string' ? puterError : ''))) || ''
+        if (!errMsg) {
+          try {
+            const asJson = JSON.stringify(puterError)
+            if (asJson && asJson !== '{}') errMsg = asJson
+          } catch {}
         }
-        setMessages((prev) => [...prev, assistantMessage])
+        if (!errMsg) {
+          const asStr = puterError?.toString?.()
+          errMsg = asStr && asStr !== '[object Object]' ? asStr : 'Unknown Puter error'
+        }
+        // Provide actionable guidance for common permission/usage errors
+        const lower = errMsg.toLowerCase()
+        if (lower.includes('permission denied') || lower.includes('usage-limited') || lower.includes('quota') || lower.includes('rate')) {
+          errMsg += ' — This may be due to account usage limits. Try logging out (top right) and signing in with a different Puter account.'
+        }
+        setMessages((prev) => prev.map(m => (
+          m.id === assistantId
+            ? { ...m, content: `Puter AI generation failed: ${errMsg}. Please check browser console.` }
+            : m
+        )))
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "An unexpected error occurred"
@@ -100,7 +168,22 @@ export default function Page() {
     } finally {
       setIsLoading(false)
     }
-  }, [ragMode, advancedConfig])
+  }, [ragMode, advancedConfig, getAuthToken])
+
+  // Show authentication UI only if Puter is available AND user is not authenticated
+  // If Puter is unavailable, allow access (will use Gemini/Groq fallback)
+  if (authLoading || requiresAuth) {
+    return (
+      <div className="flex flex-col h-screen bg-gradient-to-br from-background via-background to-muted/20">
+        <Header />
+        <div className="flex-1 overflow-auto p-4">
+          <div className="max-w-7xl mx-auto">
+            <PuterSignIn />
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-background via-background to-muted/20">

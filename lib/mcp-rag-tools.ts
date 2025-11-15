@@ -5,7 +5,7 @@ import { RAGMode } from '../app/actions'
 // Shared Zod schema for RAG query validation
 export const ragQuerySchema = z.object({
   query: z.string().min(1, "Query cannot be empty"),
-  mode: z.enum(['basic', 'advanced']).optional().default('basic')
+  mode: z.enum(['basic', 'advanced']).optional().default('advanced')
 })
 
 // RAG query result type

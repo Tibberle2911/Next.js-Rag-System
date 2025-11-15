@@ -2,51 +2,62 @@
  * Digital Twin RAG Application
  * Based on Binal's production implementation
  * - Upstash Vector: Dense vector storage with client-side embeddings
- * - Groq: Ultra-fast LLM inference
+ * - Puter AI: Free AI services (primary, with fallback to Gemini/Groq)
+ * - Embeddings: HuggingFace BAAI/bge-large-en-v1.5 (1024D)
  */
 import { generateResponse } from "./groq-client"
+import { GoogleGenAI } from "@google/genai"
+// Puter client-side generation removed from server RAG layer to avoid window usage
+
+// Feature flag to use Puter AI (enabled by default for basic RAG)
+const USE_PUTER_AI = process.env.USE_PUTER_AI !== 'false' // Default: true
+
+let geminiClient: GoogleGenAI | null = null;
+
+function getGeminiClient() {
+  if (!geminiClient) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY environment variable is not set");
+    }
+    geminiClient = new GoogleGenAI({ apiKey });
+  }
+  return geminiClient;
+}
 
 /**
  * Generate dense vector embeddings from text
- * Creates consistent 1024-dimensional vectors using deterministic hashing
- * Required for Upstash Vector indexes that need dense vectors
+ * Primary: Gemini text-embedding-004 (fast and reliable)
+ * Note: Puter/HuggingFace embeddings disabled due to sharp module issues
  */
-export function generateEmbedding(text: string): number[] {
-  const dimension = 1024 // Standard dimension for most embedding models
-  const vector: number[] = []
+export async function generateEmbedding(text: string): Promise<number[]> {
+  // Skip Puter/HuggingFace embeddings - sharp module causes issues in Next.js
+  // USE_PUTER_AI flag disabled for embeddings only
   
-  // Create a deterministic hash from the text
-  let hash = 0
-  for (let i = 0; i < text.length; i++) {
-    const char = text.charCodeAt(i)
-    hash = ((hash << 5) - hash) + char
-    hash = hash & hash // Convert to 32-bit integer
+  // Use Gemini embeddings (reliable and fast)
+  const client = getGeminiClient()
+  const embeddingModelName = process.env.GEMINI_EMBEDDING_MODEL || "text-embedding-004"
+  const result = await client.models.embedContent({
+    model: embeddingModelName,
+    contents: text,
+  })
+  
+  if (!result.embeddings || !result.embeddings[0]?.values) {
+    throw new Error("Failed to generate embedding: Invalid response from Gemini API")
   }
   
-  // Generate consistent vector using multiple hash seeds
-  for (let i = 0; i < dimension; i++) {
-    const seed1 = hash + i
-    const seed2 = hash * (i + 1)
-    const seed3 = hash ^ (i * 37)
-    
-    // Combine multiple deterministic random sources for better distribution
-    const val1 = Math.sin(seed1) * 10000
-    const val2 = Math.cos(seed2) * 10000
-    const val3 = Math.sin(seed3 * 0.7) * 10000
-    
-    const combined = (val1 + val2 + val3) / 3
-    vector.push((combined - Math.floor(combined)) * 2 - 1) // Normalize to [-1, 1]
+  let embedding = result.embeddings[0].values
+  
+  // Upstash Vector DB expects 1024D vectors, but text-embedding-004 produces 768D
+  // Pad with zeros if necessary
+  const expectedDimension = 1024
+  if (embedding.length < expectedDimension) {
+    const padding = new Array(expectedDimension - embedding.length).fill(0)
+    embedding = [...embedding, ...padding]
+    console.log(`Padded embedding from ${result.embeddings[0].values.length}D to ${expectedDimension}D`)
   }
   
-  // Normalize the vector to unit length (common for embedding models)
-  const magnitude = Math.sqrt(vector.reduce((sum, val) => sum + val * val, 0))
-  if (magnitude > 0) {
-    for (let i = 0; i < vector.length; i++) {
-      vector[i] = vector[i] / magnitude
-    }
-  }
-  
-  return vector
+  return embedding
 }
 
 export interface VectorSearchResult {
@@ -66,10 +77,10 @@ export interface RAGResponse {
 }
 
 /**
- * Perform RAG query using Upstash Vector + Groq
+ * Perform RAG query using Upstash Vector + Puter AI (with fallback)
  * Matches the Python working implementation exactly
  */
-export async function queryRAG(question: string): Promise<string> {
+export async function queryRAG(question: string, authToken?: string): Promise<string> {
   try {
     console.log("🧠 Searching your professional profile...")
     const vectorResults = await queryVectorDatabase(question, 3)
@@ -99,7 +110,14 @@ export async function queryRAG(question: string): Promise<string> {
     // Build context from search results (matching Python pattern)
     const context = topDocs.join("\n\n")
     
-    // Generate response using Groq with retrieved context (matching Python pattern)
+    // Client-side Puter AI streaming removed here: server layer should not call window-based SDK.
+    // If Puter AI is desired, perform only context retrieval server-side and handle generation in client.
+    if (USE_PUTER_AI && authToken) {
+      console.log("ℹ️ Puter AI generation is skipped in server RAG; handled client-side.")
+    }
+    
+    // Fallback: Generate response using Groq/Gemini with retrieved context
+    console.log("🔄 Using provider (Gemini/Groq) for server-side generation...")
     const response = await generateResponse({
       question: question,
       context: context
@@ -115,6 +133,7 @@ export async function queryRAG(question: string): Promise<string> {
 /**
  * Query Upstash Vector Database using built-in text search
  * Matches Python working pattern exactly
+ * Includes retry logic for connection resets
  */
 export async function queryVectorDatabase(question: string, topK = 3): Promise<VectorSearchResult[]> {
   const token = process.env.UPSTASH_VECTOR_REST_TOKEN
@@ -129,53 +148,85 @@ export async function queryVectorDatabase(question: string, topK = 3): Promise<V
     throw new Error("Upstash Vector database configuration is missing. Please check environment variables.")
   }
 
-  try {
-    // Generate dense vector embedding from the question text
-    const queryVector = generateEmbedding(question)
-    console.log(`Generated ${queryVector.length}D vector for query: "${question}"`)
-    
-    // Query using dense vector (required by this index)
-    const response = await fetch(`${url}/query`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        vector: queryVector,
-        topK: topK,
-        includeMetadata: true,
-      }),
-    })
+  // Retry logic for ECONNRESET errors
+  const maxRetries = 3;
+  let lastError: Error | null = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // Generate dense vector embedding from the question text
+      const queryVector = await generateEmbedding(question);
+      console.log(`Generated ${queryVector.length}D vector for query: "${question}"`)
+      
+      // Query using dense vector (required by this index) with timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      
+      try {
+        const response = await fetch(`${url}/query`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            vector: queryVector,
+            topK: topK,
+            includeMetadata: true,
+          }),
+          signal: controller.signal,
+        })
 
-    if (!response.ok) {
-      const errText = await response.text().catch(() => "")
-      console.error('Upstash Vector API error:', {
-        status: response.status,
-        statusText: response.statusText,
-        url: url,
-        error: errText
-      })
-      throw new Error(`Vector DB error: ${response.status} ${response.statusText}${errText ? ` - ${errText}` : ""}`)
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errText = await response.text().catch(() => "")
+          console.error('Upstash Vector API error:', {
+            status: response.status,
+            statusText: response.statusText,
+            url: url,
+            error: errText
+          })
+          throw new Error(`Vector DB error: ${response.status} ${response.statusText}${errText ? ` - ${errText}` : ""}`)
+        }
+
+        const data = await response.json()
+        const results: VectorSearchResult[] = (data.result || []).map((r: any) => ({
+          id: r.id || "",
+          title: r.metadata?.title || "Information", 
+          content: r.metadata?.content || "",
+          score: r.score || 0,
+          category: r.metadata?.category || "",
+          tags: r.metadata?.tags || [],
+        }))
+        
+        console.log(`Found ${results.length} vector matches`)
+
+        return results
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        throw fetchError;
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      
+      // Check if it's a connection reset error
+      const isConnectionError = lastError.message.includes('ECONNRESET') || 
+                                 lastError.message.includes('fetch failed') ||
+                                 lastError.message.includes('aborted');
+      
+      if (isConnectionError && attempt < maxRetries) {
+        console.warn(`⚠️ Vector query attempt ${attempt}/${maxRetries} failed (${lastError.message}), retrying in ${attempt * 1000}ms...`);
+        await new Promise(resolve => setTimeout(resolve, attempt * 1000)); // Exponential backoff
+        continue;
+      }
+      
+      console.error("Vector search error:", error)
+      throw lastError;
     }
-
-    const data = await response.json()
-    const results: VectorSearchResult[] = (data.result || []).map((r: any) => ({
-      id: r.id || "",
-      title: r.metadata?.title || "Information", 
-      content: r.metadata?.content || "",
-      score: r.score || 0,
-      category: r.metadata?.category || "",
-      tags: r.metadata?.tags || [],
-    }))
-    
-    console.log(`Found ${results.length} vector matches`)
-
-    return results
-  } catch (error) {
-    console.error("Vector search error:", error)
-    throw error
   }
+  
+  throw lastError || new Error("Vector query failed after retries");
 }
 
 /**

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ragQuery } from '@/app/actions'
-import { generateResponse } from '@/lib/groq-client'
+import { FrameworkEvaluationService } from '@/lib/evaluation-frameworks'
+import { requireAuthAndRateLimit } from '@/lib/eval-rate-limit'
 
 interface TestCase {
   id: string
@@ -48,346 +49,209 @@ const TEST_CASES: TestCase[] = [
   }
 ]
 
-async function evaluateMetric(
-  metricName: string,
+async function evaluateAllMetrics(
   question: string,
   answer: string,
-  context: string
-): Promise<{ score: number; feedback: string }> {
-  const prompts = {
-    relevance: `Evaluate how well the answer addresses the specific question asked.
-
-Question: "${question}"
-Answer: "${answer}"
-
-Rate from 0.0 to 1.0 how relevant the answer is to the question. Respond in JSON format:
-{
-  "relevance": <score>,
-  "feedback": "<explanation>"
-}`,
-
-    coherence: `Evaluate the logical flow and clarity of the answer.
-
-Answer: "${answer}"
-
-Rate from 0.0 to 1.0 how coherent and well-structured the answer is. Respond in JSON format:
-{
-  "coherence": <score>,
-  "feedback": "<explanation>"
-}`,
-
-    factual_accuracy: `Evaluate how factually consistent the answer is with the provided context.
-
-Context: "${context}"
-Answer: "${answer}"
-
-Rate from 0.0 to 1.0 how factually accurate the answer is. Respond in JSON format:
-{
-  "factual_accuracy": <score>,
-  "feedback": "<explanation>"
-}`,
-
-    completeness: `Evaluate how thoroughly the answer addresses the question.
-
-Question: "${question}"
-Answer: "${answer}"
-
-Rate from 0.0 to 1.0 how complete the answer is. Respond in JSON format:
-{
-  "completeness": <score>,
-  "feedback": "<explanation>"
-}`,
-
-    context_usage: `Evaluate how well the answer utilizes the provided context.
-
-Context: "${context}"
-Answer: "${answer}"
-
-Rate from 0.0 to 1.0 how effectively the context was used. Respond in JSON format:
-{
-  "context_usage": <score>,
-  "feedback": "<explanation>"
-}`,
-
-    professional_tone: `Evaluate the professional quality and tone of the answer.
-
-Answer: "${answer}"
-
-Rate from 0.0 to 1.0 how professional the tone and language is. Respond in JSON format:
-{
-  "professional_tone": <score>,
-  "feedback": "<explanation>"
-}`
+  contexts: string[],
+  ragMode: 'basic' | 'advanced'
+): Promise<{
+  ragas_metrics: any
+  feedback: any
+  overall_score: number
+  metrics_breakdown: {
+    ragas_scores: number[]
+    total_metrics: number
+    scoring_method: string
   }
+}> {
+  const evaluationService = new FrameworkEvaluationService()
+  
+  console.log(`📊 Starting RAGAS-only evaluation for ${ragMode} mode...`)
+  const result = await evaluationService.evaluateComprehensive(question, answer, contexts, ragMode)
+  
+  // Extract RAGAS metric scores (5 metrics - answer_relevancy removed due to Groq compatibility)
+  const ragasScores = [
+    result.ragas_metrics.faithfulness,
+    result.ragas_metrics.context_precision,
+    result.ragas_metrics.context_recall,
+    result.ragas_metrics.context_relevance,
+    result.ragas_metrics.answer_correctness
+  ].filter((score): score is number => score !== undefined && score !== null && !isNaN(score))
+  
+  // Use overall score from result (already calculated by UnifiedEvaluationService)
+  const overall_score = result.overall_score
+  
+  console.log(`✅ RAGAS evaluation completed with ${ragasScores.length}/5 metrics`)
+  console.log(`📈 RAGAS scores: ${ragasScores.map(s => s.toFixed(3)).join(', ')}`)
+  console.log(`🏆 Overall Score: ${overall_score.toFixed(3)} (average of ${ragasScores.length} metrics)`)
+  
+  return {
+    ragas_metrics: result.ragas_metrics,
+    feedback: result.feedback,
+    overall_score,
+    metrics_breakdown: {
+      ragas_scores: ragasScores,
+      total_metrics: ragasScores.length,
+      scoring_method: result.evaluation_method || `ragas_only_${ragMode}`
+    }
+  }
+}
 
+
+export async function POST(request: NextRequest) {
   try {
-    const prompt = prompts[metricName as keyof typeof prompts]
-    if (!prompt) {
-      return { score: 0.8, feedback: `Default score for ${metricName}` }
+    // Auth + rate limit gate (batch run should also be limited)
+    const blocked = requireAuthAndRateLimit(request)
+    if (blocked) return blocked
+
+    console.log('🚀 Starting batch RAG evaluation with framework-based metrics...')
+    
+    const results = []
+    
+    for (let i = 0; i < TEST_CASES.length; i++) {
+      const testCase = TEST_CASES[i]
+      console.log(`\n🎯 Evaluating test case ${i + 1}/${TEST_CASES.length}: "${testCase.question}"`)
+
+      for (const ragMode of ['basic', 'advanced'] as const) {
+        console.log(`\n📊 Testing ${ragMode} RAG mode...`)
+        const startTime = Date.now()
+
+        try {
+          // Get RAG response
+          const ragResult = await ragQuery(testCase.question, ragMode)
+          
+          if (!ragResult.answer) {
+            throw new Error(`No answer generated from ${ragMode} RAG`)
+          }
+
+          const responseTime = (Date.now() - startTime) / 1000
+
+          // Build contexts array from sources
+          const contexts = ragResult.sources.map(s => s.content)
+
+          // Evaluate using RAGAS-only framework
+          console.log(`📋 Evaluating ${ragMode} response using RAGAS framework...`)
+          const evaluationResult = await evaluateAllMetrics(testCase.question, ragResult.answer, contexts, ragMode)
+
+          const ragasMetrics = evaluationResult.ragas_metrics
+          const feedback = evaluationResult.feedback
+          const overall_score = evaluationResult.overall_score
+          const metricsBreakdown = evaluationResult.metrics_breakdown
+
+          console.log(`✅ ${ragMode} evaluation completed with overall score: ${overall_score.toFixed(3)}`)
+
+          // Build result with RAGAS metrics (5 metrics)
+          const result = {
+            testCase: testCase.id,
+            question: testCase.question,
+            category: testCase.category,
+            difficulty: testCase.difficulty,
+            description: testCase.description,
+            rag_mode: ragMode,
+            answer: ragResult.answer,
+            generated_answer: ragResult.answer,
+            response_time: responseTime,
+            num_contexts: ragResult.sources.length,
+            techniques_used: ragResult.metadata?.techniquesUsed || [],
+            overall_score,
+            evaluation_method: metricsBreakdown.scoring_method,
+
+            // RAGAS metrics (5 metrics - answer_relevancy removed due to Groq compatibility)
+            faithfulness: ragasMetrics.faithfulness,
+            context_precision: ragasMetrics.context_precision,
+            context_recall: ragasMetrics.context_recall,
+            context_relevancy: ragasMetrics.context_relevance,
+            answer_correctness: ragasMetrics.answer_correctness,
+
+            // LangChain feedback (post-evaluation analysis)
+            feedback: feedback,
+
+            // Metrics breakdown for data visualization and analysis
+            metrics_breakdown: {
+              ragas_scores: metricsBreakdown.ragas_scores,
+              total_metrics: metricsBreakdown.total_metrics,
+              scoring_method: metricsBreakdown.scoring_method,
+              mode_specific_adjustments: `RAGAS-only evaluation in ${ragMode} mode with comprehensive feedback`
+            }
+          }
+
+          results.push(result)
+
+          // Add delay between evaluations to prevent rate limiting
+          console.log('⚙️ Adding delay to prevent rate limiting...')
+          await new Promise(resolve => setTimeout(resolve, 3000)) // 3 second delay
+
+        } catch (error) {
+          console.error(`❌ Error in ${ragMode} RAG evaluation:`, error)
+          
+          // Add error result
+          results.push({
+            testCase: testCase.id,
+            question: testCase.question,
+            category: testCase.category,
+            difficulty: testCase.difficulty,
+            description: testCase.description,
+            rag_mode: ragMode,
+            answer: '',
+            generated_answer: '',
+            response_time: 0,
+            num_contexts: 0,
+            techniques_used: [],
+            overall_score: 0,
+            evaluation_method: "framework_based_error",
+            error: error instanceof Error ? error.message : 'Unknown error',
+            
+            // Zero scores for failed evaluation (5 RAGAS metrics)
+            faithfulness: 0,
+            context_precision: 0,
+            context_recall: 0,
+            context_relevancy: 0,
+            answer_correctness: 0,
+            
+            metrics_breakdown: {
+              ragas_scores: [0, 0, 0, 0, 0],
+              total_metrics: 5,
+              scoring_method: `${ragMode}_mode_error`,
+              mode_specific_adjustments: `Error in ${ragMode} mode evaluation`
+            }
+          })
+          
+          // Add delay even for error cases to prevent rate limiting
+          await new Promise(resolve => setTimeout(resolve, 2000)) // 2 second delay for errors
+        }
+      }
+      
+      // Add delay between test cases
+      if (i < TEST_CASES.length - 1) {
+        console.log('🔄 Pausing between test cases to prevent rate limiting...')
+        await new Promise(resolve => setTimeout(resolve, 5000)) // 5 second delay between test cases
+      }
     }
 
-    const response = await generateResponse({
-      question: prompt,
-      context: "",
-      canonicalName: "Evaluator"
+    console.log(`\n🎉 Batch evaluation completed! Processed ${results.length} total evaluations`)
+    console.log(`📊 Framework-based results: ${results.filter(r => r.evaluation_method === 'framework_based').length} successful, ${results.filter(r => r.evaluation_method === 'framework_based_error').length} errors`)
+
+    return NextResponse.json({ 
+      results,
+      summary: {
+        total_evaluations: results.length,
+        successful_evaluations: results.filter(r => r.evaluation_method === 'framework_based').length,
+        error_evaluations: results.filter(r => r.evaluation_method === 'framework_based_error').length,
+        test_cases: TEST_CASES.length,
+        rag_modes: ['basic', 'advanced'],
+        metrics_per_evaluation: 5,
+        evaluation_framework: 'RAGAS comprehensive framework (5 metrics)'
+      }
     })
 
-    // Parse JSON response
-    const jsonMatch = response.match(/\{[\s\S]*\}/)
-    if (jsonMatch) {
-      const result = JSON.parse(jsonMatch[0])
-      return {
-        score: result[metricName] || 0.8,
-        feedback: result.feedback || `Evaluation completed for ${metricName}`
-      }
-    }
-
-    return { score: 0.8, feedback: `Evaluation completed for ${metricName}` }
   } catch (error) {
-    console.error(`Error evaluating ${metricName}:`, error)
-    return { score: 0.8, feedback: `Error evaluating ${metricName}` }
+    console.error('❌ Batch evaluation failed:', error)
+    return NextResponse.json(
+      { 
+        error: 'Batch evaluation failed', 
+        details: error instanceof Error ? error.message : 'Unknown error' 
+      },
+      { status: 500 }
+    )
   }
-}
-
-async function evaluateSingle(testCase: TestCase, ragMode: 'basic' | 'advanced', controller: ReadableStreamDefaultController, encoder: TextEncoder) {
-  try {
-    // Generate RAG response
-    const startTime = performance.now()
-    const ragResult = await ragQuery(testCase.question, ragMode)
-    const endTime = performance.now()
-    const responseTime = (endTime - startTime) / 1000
-
-    if (ragResult.error) {
-      throw new Error(ragResult.error)
-    }
-
-    // Build context from sources
-    const context = ragResult.sources.map(s => `[${s.title}] ${s.content}`).join('\n\n')
-
-    // Evaluate Individual/LangChain metrics
-    const individualMetrics = {
-      relevance: await evaluateMetric('relevance', testCase.question, ragResult.answer, context),
-      coherence: await evaluateMetric('coherence', testCase.question, ragResult.answer, context),
-      factual_accuracy: await evaluateMetric('factual_accuracy', testCase.question, ragResult.answer, context),
-      completeness: await evaluateMetric('completeness', testCase.question, ragResult.answer, context),
-      context_usage: await evaluateMetric('context_usage', testCase.question, ragResult.answer, context),
-      professional_tone: await evaluateMetric('professional_tone', testCase.question, ragResult.answer, context)
-    }
-
-    // Simulate RAGAS metrics with reasonable scores
-    const ragasMetrics = {
-      faithfulness: 0.85 + Math.random() * 0.1,
-      answer_relevancy: 0.8 + Math.random() * 0.15,
-      context_precision: 0.75 + Math.random() * 0.15,
-      context_recall: 0.8 + Math.random() * 0.1,
-      context_relevancy: 0.8 + Math.random() * 0.1,
-      answer_correctness: (individualMetrics.relevance.score + individualMetrics.factual_accuracy.score) / 2
-    }
-
-    // Calculate overall score
-    const allScores = [
-      ...Object.values(individualMetrics).map(m => m.score),
-      ...Object.values(ragasMetrics)
-    ]
-    const overall_score = allScores.reduce((sum, score) => sum + score, 0) / allScores.length
-
-    // Build result in expected format
-    const result = {
-      answer: ragResult.answer,
-      generated_answer: ragResult.answer,
-      response_time: responseTime,
-      num_contexts: ragResult.sources.length,
-      rag_mode: ragMode,
-      question: testCase.question,
-      category: testCase.category,
-      difficulty: testCase.difficulty,
-      techniques_used: ragResult.metadata?.techniquesUsed || [],
-      overall_score,
-      evaluation_method: "individual_metrics",
-      
-      // RAGAS/GROQ metrics
-      ...ragasMetrics,
-
-      // Individual metrics (flat structure for compatibility)
-      relevance: individualMetrics.relevance.score,
-      coherence: individualMetrics.coherence.score,
-      factual_accuracy: individualMetrics.factual_accuracy.score,
-      completeness: individualMetrics.completeness.score,
-      context_usage: individualMetrics.context_usage.score,
-      professional_tone: individualMetrics.professional_tone.score,
-
-      // Detailed feedback
-      individual_metric_details: {
-        relevance: {
-          score: individualMetrics.relevance.score,
-          feedback: individualMetrics.relevance.feedback,
-          evaluation_time: 0.5
-        },
-        coherence: {
-          score: individualMetrics.coherence.score,
-          feedback: individualMetrics.coherence.feedback,
-          evaluation_time: 0.4
-        },
-        factual_accuracy: {
-          score: individualMetrics.factual_accuracy.score,
-          feedback: individualMetrics.factual_accuracy.feedback,
-          evaluation_time: 0.4
-        },
-        completeness: {
-          score: individualMetrics.completeness.score,
-          feedback: individualMetrics.completeness.feedback,
-          evaluation_time: 0.4
-        },
-        context_usage: {
-          score: individualMetrics.context_usage.score,
-          feedback: individualMetrics.context_usage.feedback,
-          evaluation_time: 0.5
-        },
-        professional_tone: {
-          score: individualMetrics.professional_tone.score,
-          feedback: individualMetrics.professional_tone.feedback,
-          evaluation_time: 0.4
-        }
-      }
-    }
-
-    controller.enqueue(encoder.encode(JSON.stringify({
-      type: 'result',
-      result: result
-    }) + '\n'))
-
-    return result
-  } catch (error) {
-    console.error('Evaluation error:', error)
-    controller.enqueue(encoder.encode(JSON.stringify({
-      type: 'error',
-      error: `Error evaluating ${testCase.question}: ${error instanceof Error ? error.message : 'Unknown error'}`
-    }) + '\n'))
-    return null
-  }
-}
-
-// Streaming response for real-time updates
-export async function POST(request: NextRequest) {
-  const encoder = new TextEncoder()
-  
-  // Parse request body to get category and RAG mode
-  let category = ''
-  let ragMode: 'basic' | 'advanced' | 'both' = 'basic'
-  try {
-    const body = await request.json()
-    category = body.category || ''
-    ragMode = body.ragMode || 'basic'
-  } catch (error) {
-    // If no body or invalid JSON, proceed with defaults
-  }
-  
-  const stream = new ReadableStream({
-    async start(controller) {
-      try {
-        // Send initial status
-        controller.enqueue(encoder.encode(JSON.stringify({
-          type: 'progress',
-          progress: 0,
-          status: `Starting evaluation process (${ragMode} RAG mode)...`
-        }) + '\n'))
-
-        // Filter test cases by category if specified
-        const testCases = category ? TEST_CASES.filter(tc => tc.category === category) : TEST_CASES
-        const totalSteps = testCases.length * 2 // Both basic and advanced
-        let completedSteps = 0
-        const results: any[] = []
-
-        // Run evaluations for both modes
-        for (const mode of ['basic', 'advanced'] as const) {
-          if (ragMode !== 'both' && ragMode !== mode) continue
-
-          controller.enqueue(encoder.encode(JSON.stringify({
-            type: 'progress',
-            progress: (completedSteps / totalSteps) * 100,
-            status: `Starting ${mode} RAG evaluation...`
-          }) + '\n'))
-
-          for (let i = 0; i < testCases.length; i++) {
-            const testCase = testCases[i]
-            
-            controller.enqueue(encoder.encode(JSON.stringify({
-              type: 'progress',
-              progress: (completedSteps / totalSteps) * 100,
-              status: `Evaluating "${testCase.question}" with ${mode} RAG...`
-            }) + '\n'))
-
-            const result = await evaluateSingle(testCase, mode, controller, encoder)
-            if (result) {
-              results.push(result)
-            }
-            
-            completedSteps++
-            controller.enqueue(encoder.encode(JSON.stringify({
-              type: 'progress',
-              progress: (completedSteps / totalSteps) * 100,
-              status: `Completed ${completedSteps}/${totalSteps} evaluations`
-            }) + '\n'))
-
-            // Small delay to prevent overwhelming
-            await new Promise(resolve => setTimeout(resolve, 100))
-          }
-        }
-
-        // Calculate summary
-        if (results.length > 0) {
-          const basicResults = results.filter(r => r.rag_mode === 'basic')
-          const advancedResults = results.filter(r => r.rag_mode === 'advanced')
-
-          const calculateStats = (results: any[]) => ({
-            total_tests: results.length,
-            avg_overall_score: results.reduce((sum, r) => sum + r.overall_score, 0) / results.length,
-            avg_response_time: results.reduce((sum, r) => sum + r.response_time, 0) / results.length,
-            avg_relevance: results.reduce((sum, r) => sum + r.relevance, 0) / results.length,
-            avg_coherence: results.reduce((sum, r) => sum + r.coherence, 0) / results.length,
-            avg_factual_accuracy: results.reduce((sum, r) => sum + r.factual_accuracy, 0) / results.length
-          })
-
-          const summary = {
-            basic_stats: basicResults.length > 0 ? calculateStats(basicResults) : null,
-            advanced_stats: advancedResults.length > 0 ? calculateStats(advancedResults) : null,
-            total_results: results.length,
-            evaluation_completed_at: new Date().toISOString()
-          }
-
-          controller.enqueue(encoder.encode(JSON.stringify({
-            type: 'summary',
-            summary: summary
-          }) + '\n'))
-        }
-
-        controller.enqueue(encoder.encode(JSON.stringify({
-          type: 'progress',
-          progress: 100,
-          status: 'Evaluation completed successfully!'
-        }) + '\n'))
-
-        controller.enqueue(encoder.encode(JSON.stringify({
-          type: 'complete'
-        }) + '\n'))
-
-      } catch (error) {
-        console.error('Evaluation process error:', error)
-        controller.enqueue(encoder.encode(JSON.stringify({
-          type: 'error',
-          error: `Evaluation process failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-        }) + '\n'))
-      }
-
-      controller.close()
-    }
-  })
-
-  return new NextResponse(stream, {
-    headers: {
-      'Content-Type': 'text/plain; charset=utf-8',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
-    }
-  })
 }

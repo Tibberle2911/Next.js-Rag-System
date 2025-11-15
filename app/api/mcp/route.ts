@@ -1,6 +1,84 @@
 // app/api/mcp/route.ts - Digital Twin RAG MCP Server
 import { executeRAGQuery, basicRagTool, advancedRagTool, ragQueryTool } from "@/lib/mcp-rag-tools";
 
+// Helper to detect Gemini rate limit (429) style errors
+function isRateLimitError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err || '')).toLowerCase()
+  return /429/.test(msg) || (msg.includes('rate') && msg.includes('limit')) || msg.includes('quota')
+}
+
+// Advanced-first fallback logic wrapper
+async function runRagWithFallback(query: string, requestedMode?: 'basic' | 'advanced') {
+  const wantAdvanced = requestedMode === 'advanced' || !requestedMode
+  let advancedError: Error | null = null
+  if (wantAdvanced) {
+    try {
+      const advancedRes = await executeRAGQuery({ query, mode: 'advanced' })
+      // If execution returns an error string inside text, attempt detection
+      if (isRateLimitError(advancedRes.text)) {
+        advancedError = new Error(advancedRes.text)
+      } else if (/error processing query/i.test(advancedRes.text) && isRateLimitError(advancedRes.text)) {
+        advancedError = new Error(advancedRes.text)
+      } else {
+        return { result: advancedRes, modeUsed: 'advanced', fallbackApplied: false }
+      }
+    } catch (e) {
+      if (isRateLimitError(e)) {
+        advancedError = e instanceof Error ? e : new Error(String(e))
+      } else {
+        // Non-rate-limit error: still fallback to basic for resiliency
+        advancedError = e instanceof Error ? e : new Error(String(e))
+      }
+    }
+  }
+
+  // Fallback to basic if advanced failed or not requested
+  try {
+    const basicRes = await executeRAGQuery({ query, mode: 'basic' })
+    if (isRateLimitError(basicRes.text)) {
+      // Both advanced + basic rate limited
+      return {
+        result: {
+          type: 'text',
+          text: `Both advanced and basic RAG are currently rate limited (Gemini 429). Please retry later.`
+        },
+        modeUsed: 'none',
+        fallbackApplied: true,
+        dualFailure: true,
+        advancedErrorMessage: advancedError?.message || 'Advanced failed'
+      }
+    }
+    return {
+      result: basicRes,
+      modeUsed: wantAdvanced ? 'basic_fallback' : 'basic',
+      fallbackApplied: wantAdvanced,
+      advancedErrorMessage: advancedError?.message
+    }
+  } catch (basicErr) {
+    if (isRateLimitError(basicErr)) {
+      return {
+        result: {
+          type: 'text',
+          text: `Both advanced and basic RAG failed due to rate limiting (Gemini 429). Try again later.`
+        },
+        modeUsed: 'none',
+        fallbackApplied: true,
+        dualFailure: true,
+        advancedErrorMessage: advancedError?.message || 'Advanced failed'
+      }
+    }
+    return {
+      result: {
+        type: 'text',
+        text: `RAG query failed. Advanced error: ${advancedError?.message || 'n/a'}. Basic error: ${basicErr instanceof Error ? basicErr.message : 'Unknown error'}`
+      },
+      modeUsed: 'error',
+      fallbackApplied: wantAdvanced,
+      advancedErrorMessage: advancedError?.message
+    }
+  }
+}
+
 // Handle initial MCP handshake and protocol
 async function handleMcpRequest(request: Request) {
   // Handle CORS preflight
@@ -149,6 +227,7 @@ async function handleMcpRequest(request: Request) {
       
       try {
         let result;
+        let meta: Record<string, any> = {}
         
         console.log(`MCP Tool Call: ${name} with args:`, args);
         
@@ -157,20 +236,37 @@ async function handleMcpRequest(request: Request) {
             const { query } = args as { query: string };
             console.log(`Executing basic RAG query: ${query}`);
             result = await executeRAGQuery({ query, mode: 'basic' });
+            meta = { requestedMode: 'basic', modeUsed: 'basic', fallbackApplied: false }
             break;
           }
           
           case advancedRagTool.name: {
             const { query } = args as { query: string };
             console.log(`Executing advanced RAG query: ${query}`);
-            result = await executeRAGQuery({ query, mode: 'advanced' });
+            const wrapped = await runRagWithFallback(query, 'advanced')
+            result = wrapped.result
+            meta = {
+              requestedMode: 'advanced',
+              modeUsed: wrapped.modeUsed,
+              fallbackApplied: wrapped.fallbackApplied,
+              dualFailure: wrapped.dualFailure || false,
+              advancedError: wrapped.advancedErrorMessage || null
+            }
             break;
           }
           
           case ragQueryTool.name: {
-            const { query, mode = 'basic' } = args as { query: string; mode?: 'basic' | 'advanced' };
-            console.log(`Executing RAG query with mode ${mode}: ${query}`);
-            result = await executeRAGQuery({ query, mode });
+            const { query, mode = 'advanced' } = args as { query: string; mode?: 'basic' | 'advanced' };
+            console.log(`Executing RAG query (default advanced) with requested mode ${mode}: ${query}`);
+            const wrapped = await runRagWithFallback(query, mode)
+            result = wrapped.result
+            meta = {
+              requestedMode: mode,
+              modeUsed: wrapped.modeUsed,
+              fallbackApplied: wrapped.fallbackApplied,
+              dualFailure: wrapped.dualFailure || false,
+              advancedError: wrapped.advancedErrorMessage || null
+            }
             break;
           }
           
