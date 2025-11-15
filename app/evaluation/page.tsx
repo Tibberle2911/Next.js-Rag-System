@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -859,7 +858,6 @@ export default function EvaluationPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background via-background to-muted/30">
-      <Header />
       
       <main className="container mx-auto p-4 sm:p-6 max-w-7xl">
         <div className="space-y-6 sm:space-y-8">

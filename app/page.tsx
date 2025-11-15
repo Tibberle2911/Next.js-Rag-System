@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback } from "react"
-import { Header } from "@/components/header"
 import { ChatMessage, type Message } from "@/components/chat-message"
 import { SourcesPanel, type Source } from "@/components/sources-panel"
 import { InputForm } from "@/components/input-form"
@@ -83,6 +82,7 @@ export default function Page() {
       }
       setMessages((prev) => [...prev, assistantMessage])
 
+      let usedFallback = false
       try {
         // Ensure Puter SDK is ready
         if (typeof (window as any).puter?.ai?.chat !== 'function') {
@@ -112,24 +112,49 @@ export default function Page() {
           console.log('✅ Streaming (advanced) finished, length:', final.length)
         } else {
           // Basic mode: perform retrieval inside streaming pipeline
-          const { final } = await streamPuterAIWithRetrieval({
-            question,
-            canonicalName,
-            temperature: 0.7,
-            maxTokens: 1500,
-            topK: 8,
-            onContext: (ctxSources) => setSources(ctxSources),
-            onChunk: (delta) => {
-              setMessages((prev) => prev.map(m => {
-                if (m.id === assistantId) {
-                  return { ...m, content: (m.content || "") + delta }
-                }
-                return m
-              }))
-            },
-            onDone: () => {},
-          })
-          console.log('✅ Streaming (basic) finished, length:', final.length)
+          try {
+            const { final } = await streamPuterAIWithRetrieval({
+              question,
+              canonicalName,
+              temperature: 0.7,
+              maxTokens: 1500,
+              topK: 8,
+              onContext: (ctxSources) => setSources(ctxSources),
+              onChunk: (delta) => {
+                setMessages((prev) => prev.map(m => {
+                  if (m.id === assistantId) {
+                    return { ...m, content: (m.content || "") + delta }
+                  }
+                  return m
+                }))
+              },
+              onDone: () => {},
+            })
+            console.log('✅ Streaming (basic) finished, length:', final.length)
+          } catch (streamErr: any) {
+            const streamMsg = (streamErr?.message || '').toLowerCase()
+            const isModeration = streamMsg.includes('no working moderation service')
+            if (isModeration) {
+              console.warn('⚠️ Moderation service unavailable. Falling back to pipeline /api/chat.')
+              usedFallback = true
+              // Call server-side pipeline for an answer
+              try {
+                const resp = await fetch('/api/chat', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ message: question, mode: 'basic' })
+                })
+                const data = await resp.json()
+                const fallbackText = data.message || 'Fallback pipeline produced no answer.'
+                setMessages((prev) => prev.map(m => m.id === assistantId ? { ...m, content: fallbackText + (usedFallback ? '\n\n[Used fallback provider]' : '') } : m))
+                setSources(data.sources || [])
+              } catch (fallbackErr) {
+                setMessages((prev) => prev.map(m => m.id === assistantId ? { ...m, content: 'Fallback provider failed: ' + (fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)) } : m))
+              }
+            } else {
+              throw streamErr
+            }
+          }
         }
       } catch (puterError: any) {
         console.error('❌ Puter AI streaming failed:', puterError)
@@ -151,7 +176,9 @@ export default function Page() {
         }
         setMessages((prev) => prev.map(m => (
           m.id === assistantId
-            ? { ...m, content: `Puter AI generation failed: ${errMsg}. Please check browser console.` }
+            ? { ...m, content: usedFallback
+                ? (m.content && m.content.length ? m.content : 'Fallback completed.')
+                : `Puter AI generation failed: ${errMsg}. Please check browser console.` }
             : m
         )))
       }
@@ -175,7 +202,6 @@ export default function Page() {
   if (authLoading || requiresAuth) {
     return (
       <div className="flex flex-col h-screen bg-gradient-to-br from-background via-background to-muted/20">
-        <Header />
         <div className="flex-1 overflow-auto p-4">
           <div className="max-w-7xl mx-auto">
             <PuterSignIn />
@@ -187,7 +213,6 @@ export default function Page() {
 
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-background via-background to-muted/20">
-      <Header />
       
       {/* RAG Mode Configuration */}
       <Collapsible open={showModeSelector} onOpenChange={setShowModeSelector}>

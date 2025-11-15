@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { BarChart3, MessageSquare, TestTube, Sparkles, Zap, Settings, Github, Menu, X } from 'lucide-react'
+import { BarChart3, MessageSquare, Sparkles, Zap, Settings, Github, Menu, X, Activity } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { usePuterAuth } from '@/lib/puter-auth'
 import { LogOut } from 'lucide-react'
@@ -27,22 +27,22 @@ export function Header() {
       description: 'Performance metrics and analysis'
     },
     {
-      href: '/optimization',
-      label: 'Optimization',
+      href: '/monitoring',
+      label: 'Monitoring',
+      icon: Activity,
+      description: 'Live system health and request metrics'
+    },
+    {
+      href: '/scalability',
+      label: 'Scalability',
       icon: Zap,
-      description: 'Query processing improvements'
+      description: 'Load tests & RAG optimizations'
     },
     {
-      href: '/advanced-features',
-      label: 'Features',
+      href: '/operations',
+      label: 'Operations',
       icon: Settings,
-      description: 'Advanced system capabilities'
-    },
-    {
-      href: '/mcp-test',
-      label: 'MCP Test',
-      icon: TestTube,
-      description: 'Model Context Protocol testing'
+      description: 'Production maintenance procedures'
     },
     {
       href: '/github',

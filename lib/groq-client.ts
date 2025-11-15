@@ -6,6 +6,7 @@
 
 import Groq from "groq-sdk"
 import { GoogleGenAI } from "@google/genai"
+import { logAIGeneration } from './metrics-logger'
 
 let groqClient: Groq | null = null
 
@@ -120,6 +121,8 @@ export interface GenerateResponseOptions {
 export async function generateResponse(options: GenerateResponseOptions): Promise<string> {
   // Check if Gemini should be used (either via provider option or USE_GEMINI env var)
   const shouldUseGemini = options.provider === 'gemini' || USE_GEMINI
+  const started = Date.now()
+  let geminiFailed = false
   
   if (shouldUseGemini) {
     const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY || ''
@@ -128,10 +131,34 @@ export async function generateResponse(options: GenerateResponseOptions): Promis
     } else {
       try {
         console.log('🤖 Using Gemini API for text generation...')
-        return await geminiGenerate(options, GEMINI_KEY)
+        const geminiStart = Date.now()
+        const out = await geminiGenerate(options, GEMINI_KEY)
+        logAIGeneration({
+          status: 200,
+          ok: true,
+          durationMs: Date.now() - geminiStart,
+          provider: 'gemini',
+          query: options.question.substring(0,160),
+          mode: options.provider === 'gemini' ? 'advanced' : undefined,
+          fallbackUsed: false
+        }).catch(()=>{})
+        return out
       } catch (err) {
         // Log and continue to fallback to Groq
         console.error('❌ Gemini generation failed, falling back to Groq:', err)
+        geminiFailed = true
+        const message = err instanceof Error ? err.message : String(err)
+        const isRateLimit = /429|rate[_\s-]?limit|quota/i.test(message)
+        logAIGeneration({
+          status: isRateLimit ? 429 : 500,
+          ok: false,
+          durationMs: Date.now() - started,
+          provider: 'gemini',
+          query: options.question.substring(0,160),
+          mode: options.provider === 'gemini' ? 'advanced' : undefined,
+          errorMessage: message,
+          fallbackUsed: true
+        }).catch(()=>{})
       }
     }
     // If no API key or geminiGenerate failed, continue to Groq path below
@@ -229,6 +256,7 @@ async function processRequestQueue(): Promise<void> {
 async function executeGroqRequest(options: GenerateResponseOptions): Promise<string> {
   const client = getGroqClient()
   const chatModel = process.env.GROQ_CHAT_MODEL || "llama-3.1-8b-instant"
+  const started = Date.now()
 
   const systemLines = [
     "You are an AI digital twin responding in first person. Use only the provided context unless general knowledge is trivial.",
@@ -300,7 +328,17 @@ Provide a helpful, professional, conversational response:`
       console.log(`✅ Request completed. Tokens used: ${actualTokens}, Total usage: ${rateLimitConfig.currentUsage}/${rateLimitConfig.tokensPerMinute}`)
 
       const responseText = completion.choices[0].message.content || ""
-      return formatResponse(responseText)
+      const formatted = formatResponse(responseText)
+      logAIGeneration({
+        status: 200,
+        ok: true,
+        durationMs: Date.now() - started,
+        provider: 'groq',
+        query: options.question.substring(0,160),
+        mode: options.provider === 'groq' ? 'basic' : undefined,
+        fallbackUsed: false
+      }).catch(()=>{})
+      return formatted
       
     } catch (error: any) {
       console.error(`Groq API error (attempt ${attempt + 1}):`, {
@@ -337,7 +375,18 @@ Provide a helpful, professional, conversational response:`
       }
       
       // Max retries exceeded or non-retryable error
-      throw new Error(`Groq API failed after ${attempt + 1} attempts: ${error.message}`)
+      const message = `Groq API failed after ${attempt + 1} attempts: ${error.message}`
+      logAIGeneration({
+        status: isRateLimit ? 429 : 500,
+        ok: false,
+        durationMs: Date.now() - started,
+        provider: 'groq',
+        query: options.question.substring(0,160),
+        mode: options.provider === 'groq' ? 'basic' : undefined,
+        errorMessage: message,
+        fallbackUsed: false
+      }).catch(()=>{})
+      throw new Error(message)
     }
   }
 

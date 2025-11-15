@@ -18,6 +18,14 @@ interface EvaluationResult {
   context_recall: number
   context_relevancy: number
   answer_correctness?: number
+  // Extended individual/LangChain style metrics (optional in many runs)
+  relevance?: number
+  coherence?: number
+  factual_accuracy?: number
+  completeness?: number
+  context_usage?: number
+  professional_tone?: number
+  answer_relevancy?: number
   overall_score: number
   num_contexts: number
   rag_mode: string
@@ -37,6 +45,14 @@ interface EvaluationSummary {
     context_recall: number
     context_relevancy: number
     answer_correctness?: number
+    // Optional extended metrics
+    relevance?: number
+    coherence?: number
+    factual_accuracy?: number
+    completeness?: number
+    context_usage?: number
+    professional_tone?: number
+    answer_relevancy?: number
   }
   performance_by_category: Record<string, { mean: number; std: number }>
   category_averages: Record<string, number>
@@ -46,6 +62,10 @@ interface EvaluationSummary {
     mean: number
     std: number
   }>
+  metric_coverage?: {
+    has_individual_metrics?: boolean
+    total_unique_metrics?: number
+  }
 }
 
 interface Props {
@@ -65,6 +85,15 @@ export default function D3Visualizations({ results, summary }: Props) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [hoveredDataPoint, setHoveredDataPoint] = useState<any>(null)
   const [chartTheme, setChartTheme] = useState<'light' | 'dark'>('dark')
+  // Track viewport width for responsive sizing
+  const [viewportWidth, setViewportWidth] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1200)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handleResize = () => setViewportWidth(window.innerWidth)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
   
   // Enhanced color schemes for different chart types
   const colorSchemes = {
@@ -134,11 +163,16 @@ export default function D3Visualizations({ results, summary }: Props) {
 
     // Create radar chart for comprehensive metrics overview
     const svg = d3.select(radarChartRef.current)
-    const width = 600
-    const height = 600
-    const margin = 120
+    // Responsive dimensions: cap at 600, minimum 320
+    const width = Math.max(320, Math.min(600, viewportWidth - 80))
+    const height = width // keep square
+    const margin = Math.min(120, width * 0.2)
 
-    svg.attr("width", width).attr("height", height)
+    svg
+      .attr('width', width)
+      .attr('height', height)
+      .attr('viewBox', `0 0 ${width} ${height}`)
+      .attr('preserveAspectRatio', 'xMidYMid meet')
     
     // Create gradients and filters
     createGradientDefs(svg)
@@ -394,7 +428,7 @@ export default function D3Visualizations({ results, summary }: Props) {
         .text(`Categories: ${metricCategories.map(c => c.charAt(0).toUpperCase() + c.slice(1)).join(' + ')}`)
     }
 
-  }, [summary, results])
+  }, [summary, results, viewportWidth])
 
   // Performance comparison bar chart
   useEffect(() => {
@@ -403,11 +437,13 @@ export default function D3Visualizations({ results, summary }: Props) {
     d3.select(barChartRef.current).selectAll("*").remove()
 
     const svg = d3.select(barChartRef.current)
-    const width = 600
-    const height = 350
+    const width = Math.max(320, Math.min(600, viewportWidth - 80))
+    const height = Math.max(260, Math.min(350, Math.round(width * 0.58)))
     const margin = { top: 40, right: 50, bottom: 80, left: 100 }
 
-    svg.attr("width", width).attr("height", height)
+    svg.attr('width', width).attr('height', height)
+      .attr('viewBox', `0 0 ${width} ${height}`)
+      .attr('preserveAspectRatio', 'xMidYMid meet')
     createGradientDefs(svg)
 
     const categoryData = Object.entries(summary.category_averages || {}).map(([category, average]) => ({
@@ -520,7 +556,7 @@ export default function D3Visualizations({ results, summary }: Props) {
       .style("fill", "#374151")
       .text("Average Score")
 
-  }, [summary])
+  }, [summary, viewportWidth])
 
   // Response time vs. accuracy scatter plot
   useEffect(() => {
@@ -529,11 +565,13 @@ export default function D3Visualizations({ results, summary }: Props) {
     d3.select(scatterPlotRef.current).selectAll("*").remove()
 
     const svg = d3.select(scatterPlotRef.current)
-    const width = 650
-    const height = 400
+    const width = Math.max(340, Math.min(680, viewportWidth - 40))
+    const height = Math.max(280, Math.min(400, Math.round(width * 0.6)))
     const margin = { top: 40, right: 100, bottom: 80, left: 100 }
 
-    svg.attr("width", width).attr("height", height)
+    svg.attr('width', width).attr('height', height)
+      .attr('viewBox', `0 0 ${width} ${height}`)
+      .attr('preserveAspectRatio', 'xMidYMid meet')
     createGradientDefs(svg)
 
     const xScale = d3.scaleLinear()
@@ -646,7 +684,7 @@ export default function D3Visualizations({ results, summary }: Props) {
       .style("fill", "#374151")
       .text("Overall Score")
 
-  }, [results])
+  }, [results, selectedMetric, viewportWidth])
 
   // Metrics comparison chart (Basic vs Advanced RAG)
   useEffect(() => {
@@ -655,11 +693,13 @@ export default function D3Visualizations({ results, summary }: Props) {
     d3.select(metricsComparisonRef.current).selectAll("*").remove()
 
     const svg = d3.select(metricsComparisonRef.current)
-    const width = 700
-    const height = 400
+    const width = Math.max(360, Math.min(720, viewportWidth - 40))
+    const height = Math.max(300, Math.min(420, Math.round(width * 0.58)))
     const margin = { top: 40, right: 100, bottom: 80, left: 100 }
 
-    svg.attr("width", width).attr("height", height)
+    svg.attr('width', width).attr('height', height)
+      .attr('viewBox', `0 0 ${width} ${height}`)
+      .attr('preserveAspectRatio', 'xMidYMid meet')
     createGradientDefs(svg)
 
     // Separate basic and advanced results
@@ -854,7 +894,7 @@ export default function D3Visualizations({ results, summary }: Props) {
       .style('font-weight', '600')
       .text('RAG Method Performance Comparison')
 
-  }, [results])
+  }, [results, viewportWidth])
 
   // Performance trend analysis
   useEffect(() => {
@@ -863,11 +903,13 @@ export default function D3Visualizations({ results, summary }: Props) {
     d3.select(performanceTrendRef.current).selectAll("*").remove()
 
     const svg = d3.select(performanceTrendRef.current)
-    const width = 700
-    const height = 300
+    const width = Math.max(360, Math.min(720, viewportWidth - 40))
+    const height = Math.max(240, Math.min(320, Math.round(width * 0.45)))
     const margin = { top: 30, right: 120, bottom: 60, left: 80 }
 
-    svg.attr("width", width).attr("height", height)
+    svg.attr('width', width).attr('height', height)
+      .attr('viewBox', `0 0 ${width} ${height}`)
+      .attr('preserveAspectRatio', 'xMidYMid meet')
     createGradientDefs(svg)
 
     // Sort results by response time for trend analysis
@@ -983,7 +1025,7 @@ export default function D3Visualizations({ results, summary }: Props) {
       .style('fill', '#374151')
       .text('Performance Score')
 
-  }, [results])
+  }, [results, viewportWidth])
 
   return (
     <div className="space-y-6">

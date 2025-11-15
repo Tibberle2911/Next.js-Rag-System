@@ -15,12 +15,8 @@ const nextConfig = {
   images: {
     unoptimized: true,
     remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: 'localhost',
-        port: '',
-        pathname: '/**',
-      },
+      // Add production image domains here if needed
+      // Example: { protocol: 'https', hostname: 'yourdomain.com', pathname: '/**' }
     ],
   },
   logging: {
@@ -45,6 +41,20 @@ const nextConfig = {
           { key: 'Access-Control-Allow-Methods', value: 'GET,OPTIONS,PATCH,DELETE,POST,PUT' },
           { key: 'Access-Control-Allow-Headers', value: 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version' },
         ],
+      },
+    ]
+  },
+  async redirects() {
+    return [
+      {
+        source: '/optimization',
+        destination: '/scalability',
+        permanent: true,
+      },
+      {
+        source: '/advanced-features',
+        destination: '/operations',
+        permanent: true,
       },
     ]
   },

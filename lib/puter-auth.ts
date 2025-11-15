@@ -39,6 +39,18 @@ export function PuterAuthProvider({ children }: { children: ReactNode }) {
     initializePuter()
   }, [])
 
+  function hasStoredToken(): boolean {
+    if (typeof window === 'undefined') return false
+    try {
+      return !!(
+        localStorage.getItem('puter.auth.token') ||
+        sessionStorage.getItem('puter.auth.token')
+      )
+    } catch {
+      return false
+    }
+  }
+
   async function initializePuter() {
     try {
       if (DEBUG) console.log('🔄 Initializing Puter auth...')
@@ -51,7 +63,8 @@ export function PuterAuthProvider({ children }: { children: ReactNode }) {
       if (winPuter && winPuter.auth) {
         if (DEBUG) console.log('✅ Using window.puter SDK')
         setPuterClient(winPuter)
-        if (winPuter.auth.isSignedIn()) {
+        // Only check sign-in if a stored token exists to avoid whoami 401 noise
+        if (hasStoredToken() && winPuter.auth.isSignedIn()) {
           try {
             const currentUser = await winPuter.auth.getUser()
             setUser(currentUser)
@@ -70,7 +83,8 @@ export function PuterAuthProvider({ children }: { children: ReactNode }) {
         const puter = (puterModule as any).default || puterModule
         if (puter?.auth) {
           setPuterClient(puter)
-          if (puter.auth.isSignedIn()) {
+          // Only check sign-in if a stored token exists
+          if (hasStoredToken() && puter.auth.isSignedIn()) {
             try {
               const currentUser = await puter.auth.getUser()
               setUser(currentUser)

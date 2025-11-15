@@ -14,6 +14,7 @@ import { generateResponse } from "./groq-client"
 import { queryVectorDatabase, generateEmbedding, VectorSearchResult } from "./rag-client"
 import { GoogleGenAI } from "@google/genai"
 import { getCanonicalName } from "./canonical-name"
+import { logAIGeneration } from "./metrics-logger"
 
 export interface AdvancedRAGConfig {
   useMultiQuery: boolean
@@ -113,7 +114,7 @@ export class AdvancedRAGClient {
   private async callGemini(prompt: string, temperature: number = 0.7, maxTokens: number = 1500): Promise<string> {
     const client = this.getGeminiClient()
     const model = "gemini-2.0-flash"
-
+    const started = Date.now()
     try {
       const resp: any = await client.models.generateContent({
         model,
@@ -123,15 +124,37 @@ export class AdvancedRAGClient {
       } as any)
 
       let text = resp?.text || resp?.output?.[0]?.content || resp?.candidates?.[0]?.content || ""
-      
-      // Remove surrounding quotes if present
       text = text.trim()
       if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
         text = text.slice(1, -1)
       }
-      
+
+      // Log successful generation (status 200 assumption)
+      logAIGeneration({
+        status: 200,
+        ok: true,
+        durationMs: Date.now() - started,
+        provider: 'gemini',
+        query: prompt.substring(0, 160), // truncate to avoid oversized payload
+        mode: 'advanced'
+      }).catch(() => {})
+
       return text
-    } catch (error) {
+    } catch (error: any) {
+      const message = error?.message || String(error)
+      const isRateLimit = /429|rate[_\s-]?limit|quota/i.test(message)
+      const status = error?.status ? Number(error.status) : (isRateLimit ? 429 : 500)
+      // Log failed generation
+      logAIGeneration({
+        status,
+        ok: false,
+        durationMs: Date.now() - started,
+        provider: 'gemini',
+        query: prompt.substring(0, 160),
+        mode: 'advanced',
+        errorMessage: message,
+        fallbackUsed: false
+      }).catch(() => {})
       console.error("Gemini API error:", error)
       throw error
     }

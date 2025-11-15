@@ -6,6 +6,7 @@
  * - Embeddings: HuggingFace BAAI/bge-large-en-v1.5 (1024D)
  */
 import { generateResponse } from "./groq-client"
+import { logVectorQuery, logAIGeneration } from './metrics-logger'
 import { GoogleGenAI } from "@google/genai"
 // Puter client-side generation removed from server RAG layer to avoid window usage
 
@@ -163,6 +164,7 @@ export async function queryVectorDatabase(question: string, topK = 3): Promise<V
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
       
       try {
+        const started = Date.now()
         const response = await fetch(`${url}/query`, {
           method: "POST",
           headers: {
@@ -187,6 +189,13 @@ export async function queryVectorDatabase(question: string, topK = 3): Promise<V
             url: url,
             error: errText
           })
+          await logVectorQuery({
+            status: response.status,
+            ok: false,
+            durationMs: Date.now() - started,
+            query: question,
+            errorMessage: errText || response.statusText
+          })
           throw new Error(`Vector DB error: ${response.status} ${response.statusText}${errText ? ` - ${errText}` : ""}`)
         }
 
@@ -201,6 +210,12 @@ export async function queryVectorDatabase(question: string, topK = 3): Promise<V
         }))
         
         console.log(`Found ${results.length} vector matches`)
+        await logVectorQuery({
+          status: 200,
+          ok: true,
+          durationMs: Date.now() - started,
+          query: question
+        })
 
         return results
       } catch (fetchError) {
@@ -222,6 +237,13 @@ export async function queryVectorDatabase(question: string, topK = 3): Promise<V
       }
       
       console.error("Vector search error:", error)
+      await logVectorQuery({
+        status: 400,
+        ok: false,
+        durationMs: 0,
+        query: question,
+        errorMessage: lastError.message
+      })
       throw lastError;
     }
   }

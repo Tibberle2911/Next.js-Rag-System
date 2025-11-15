@@ -2,6 +2,10 @@
   "name": "my-v0-project",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
   "scripts": {
     "build": "next build",
     "dev": "next dev",
@@ -72,6 +76,7 @@
     "tailwindcss-animate": "^1.0.7",
     "tw-animate-css": "latest",
     "vaul": "^0.9.9",
+    "@neondatabase/serverless": "^0.10.4",
     "zod": "3.25.76"
   },
   "devDependencies": {

@@ -1,0 +1,18 @@
+# Vercel deployment ignore patterns
+.env.local
+.env*.local
+.venv
+venv/
+python_evaluators/venv/
+python_evaluators/__pycache__/
+evaluation/__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+*.log
+.DS_Store
+.turbo
+.next/cache

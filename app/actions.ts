@@ -4,6 +4,7 @@ import { queryRAG as queryBasicRAG, queryVectorDatabase, sanitizeText, isPIIRequ
 import { generateResponse } from "@/lib/groq-client"
 import { queryAdvancedRAG, AdvancedRAGConfig, DEFAULT_ADVANCED_CONFIG } from "@/lib/advanced-rag-client"
 import { getCanonicalName } from "@/lib/canonical-name"
+import { logAIGeneration } from "@/lib/metrics-logger"
 
 export type RAGMode = "basic" | "advanced"
 
@@ -69,6 +70,7 @@ export async function ragQuery(
   try {
     if (mode === "advanced") {
       // Use advanced RAG processing
+      const started = Date.now()
       const advancedResult = await queryAdvancedRAG(question, advancedConfig, getCanonicalName())
       
       if (advancedResult.error) {
@@ -86,6 +88,16 @@ export async function ragQuery(
 
       // Limit response length and sanitize
       const limitedAnswer = limitWords(sanitizeText(advancedResult.answer), 50, 250)
+      logAIGeneration({
+        status: advancedResult.error ? 500 : 200,
+        ok: !advancedResult.error,
+        durationMs: Date.now() - started,
+        provider: 'pipeline',
+        query: question.substring(0,160),
+        mode: 'advanced',
+        errorMessage: advancedResult.error || undefined,
+        fallbackUsed: false
+      }).catch(()=>{})
       
       return {
         answer: limitedAnswer,
@@ -106,6 +118,7 @@ export async function ragQuery(
     } else {
       // Use basic RAG processing with Puter AI integration
       console.log('🚀 Using Basic RAG with Puter AI...')
+      const started = Date.now()
       
       // Call the Puter-integrated queryRAG function with auth token
       const answer = await queryBasicRAG(question, authToken)
@@ -131,6 +144,15 @@ export async function ragQuery(
 
       // Limit response length
       const limitedAnswer = limitWords(sanitizeText(answer), 50, 200)
+      logAIGeneration({
+        status: 200,
+        ok: true,
+        durationMs: Date.now() - started,
+        provider: 'pipeline',
+        query: question.substring(0,160),
+        mode: 'basic',
+        fallbackUsed: false
+      }).catch(()=>{})
 
       return {
         answer: limitedAnswer,
@@ -146,6 +168,16 @@ export async function ragQuery(
     }
   } catch (error) {
     console.error("RAG query error:", error)
+    logAIGeneration({
+      status: 500,
+      ok: false,
+      durationMs: 0,
+      provider: 'pipeline',
+      query: question.substring(0,160),
+      mode,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      fallbackUsed: false
+    }).catch(()=>{})
     return {
       answer: "",
       sources: [],

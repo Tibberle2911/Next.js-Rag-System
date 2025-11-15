@@ -1,5 +1,6 @@
 // app/api/mcp/route.ts - Digital Twin RAG MCP Server
 import { executeRAGQuery, basicRagTool, advancedRagTool, ragQueryTool } from "@/lib/mcp-rag-tools";
+import { logFallback } from "@/lib/metrics-logger";
 
 // Helper to detect Gemini rate limit (429) style errors
 function isRateLimitError(err: unknown): boolean {
@@ -37,6 +38,16 @@ async function runRagWithFallback(query: string, requestedMode?: 'basic' | 'adva
     const basicRes = await executeRAGQuery({ query, mode: 'basic' })
     if (isRateLimitError(basicRes.text)) {
       // Both advanced + basic rate limited
+      if (advancedError) {
+        logFallback({
+          from: 'advanced',
+          to: 'basic',
+          reason: 'rate_limit',
+          query,
+          originalStatus: 429,
+          message: advancedError.message
+        }).catch(()=>{})
+      }
       return {
         result: {
           type: 'text',
@@ -48,6 +59,16 @@ async function runRagWithFallback(query: string, requestedMode?: 'basic' | 'adva
         advancedErrorMessage: advancedError?.message || 'Advanced failed'
       }
     }
+    if (wantAdvanced && advancedError) {
+      logFallback({
+        from: 'advanced',
+        to: 'basic',
+        reason: isRateLimitError(advancedError) ? 'rate_limit' : 'error',
+        query,
+        originalStatus: isRateLimitError(advancedError) ? 429 : 500,
+        message: advancedError.message
+      }).catch(()=>{})
+    }
     return {
       result: basicRes,
       modeUsed: wantAdvanced ? 'basic_fallback' : 'basic',
@@ -56,6 +77,16 @@ async function runRagWithFallback(query: string, requestedMode?: 'basic' | 'adva
     }
   } catch (basicErr) {
     if (isRateLimitError(basicErr)) {
+      if (advancedError) {
+        logFallback({
+          from: 'advanced',
+          to: 'basic',
+          reason: 'rate_limit',
+          query,
+          originalStatus: 429,
+          message: advancedError.message
+        }).catch(()=>{})
+      }
       return {
         result: {
           type: 'text',
@@ -66,6 +97,16 @@ async function runRagWithFallback(query: string, requestedMode?: 'basic' | 'adva
         dualFailure: true,
         advancedErrorMessage: advancedError?.message || 'Advanced failed'
       }
+    }
+    if (wantAdvanced && advancedError) {
+      logFallback({
+        from: 'advanced',
+        to: 'basic',
+        reason: isRateLimitError(advancedError) ? 'rate_limit' : 'error',
+        query,
+        originalStatus: isRateLimitError(advancedError) ? 429 : 500,
+        message: advancedError.message
+      }).catch(()=>{})
     }
     return {
       result: {

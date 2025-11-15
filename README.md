@@ -36,12 +36,23 @@ Create a `.env.local` file with the following variables:
 
 ```bash
 # Upstash Vector Database - Required for RAG functionality
-UPSTASH_VECTOR_REST_TOKEN=\"your_upstash_vector_token_here\"
-UPSTASH_VECTOR_REST_READONLY_TOKEN=\"your_upstash_readonly_token_here\"\nUPSTASH_VECTOR_REST_URL=\"https://your-vector-db.upstash.io\"
+UPSTASH_VECTOR_REST_TOKEN="your_upstash_vector_token_here"
+UPSTASH_VECTOR_REST_READONLY_TOKEN="your_upstash_readonly_token_here"
+UPSTASH_VECTOR_REST_URL="https://your-vector-db.upstash.io"
 
 # Groq API Configuration - Required for LLM responses
-GROQ_API_KEY=\"your_groq_api_key_here\"
-GROQ_EMBEDDING_MODEL=\"llama-3.1-8b-instant\"
+GROQ_API_KEY="your_groq_api_key_here"
+GROQ_EMBEDDING_MODEL="llama-3.1-8b-instant"
+
+# Neon Postgres (metrics & persistence)
+DATABASE_URL="postgresql://<user>:<password>@<neon-host>/<database>?sslmode=require"
+DATABASE_URL_UNPOOLED="postgresql://<user>:<password>@<neon-host-unpooled>/<database>?sslmode=require"
+PGHOST="<neon-host-pooler>"
+PGHOST_UNPOOLED="<neon-host-direct>"
+PGUSER="<user>"
+PGDATABASE="<database>"
+PGPASSWORD="<password>"
+POSTGRES_PRISMA_URL="postgresql://<user>:<password>@<neon-host-pooler>/<database>?connect_timeout=15&sslmode=require"
 ```
 
 ## 📦 Local Development
@@ -134,6 +145,62 @@ GROQ_EMBEDDING_MODEL=\"llama-3.1-8b-instant\"
 1. Get API key from [groq.com](https://groq.com)
 2. Add `GROQ_API_KEY` to environment variables
 3. Set `GROQ_EMBEDDING_MODEL` to `llama-3.1-8b-instant`
+
+### Neon Postgres Metrics Storage
+
+Metrics are now stored exclusively in Neon Postgres (no Redis fallback).
+
+1. Create a Neon project and database.
+2. Set `DATABASE_URL` (pooled) in `.env.local` and Vercel.
+3. (Optional) Add `DATABASE_URL_UNPOOLED` for migrations.
+4. Set `ENABLE_METRICS_LOGGING=true` (omit or set false to disable).
+5. On first write the app automatically creates tables:
+
+```sql
+CREATE TABLE IF NOT EXISTS rag_requests (
+   id BIGSERIAL PRIMARY KEY,
+   ts BIGINT NOT NULL,
+   service TEXT NOT NULL,
+   kind TEXT NOT NULL,
+   status INT NOT NULL,
+   ok BOOLEAN NOT NULL,
+   duration_ms INT,
+   endpoint TEXT,
+   query TEXT,
+   error_message TEXT,
+   fallback_used BOOLEAN,
+   mode TEXT
+);
+
+CREATE TABLE IF NOT EXISTS rag_fallbacks (
+   id BIGSERIAL PRIMARY KEY,
+   ts BIGINT NOT NULL,
+   service TEXT NOT NULL,
+   kind TEXT NOT NULL,
+   from_mode TEXT NOT NULL,
+   to_mode TEXT NOT NULL,
+   reason TEXT NOT NULL,
+   original_status INT,
+   message TEXT,
+   query TEXT
+);
+```
+
+6. Health endpoint returns `backend: postgres` when Neon is active.
+7. To analyze metrics:
+
+```sql
+SELECT service, kind, COUNT(*) AS total, AVG(duration_ms) AS avg_ms
+FROM rag_requests
+GROUP BY service, kind
+ORDER BY total DESC;
+
+SELECT reason, COUNT(*) AS total
+FROM rag_fallbacks
+GROUP BY reason;
+```
+
+Security: Never commit real credentials. Use placeholders in shared code/docs.
 
 ## 📚 API Endpoints
 

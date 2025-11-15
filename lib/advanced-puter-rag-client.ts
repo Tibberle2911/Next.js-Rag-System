@@ -97,35 +97,45 @@ async function puterComplete(
   prompt: string,
   temperature = 0.7,
   maxTokens = 5000,
-  model = (process.env.NEXT_PUBLIC_PUTER_MODEL_TEXT || 'google/gemini-2.5-pro').toString().trim()
+  model = (process.env.NEXT_PUBLIC_PUTER_MODEL_TEXT || 'google/gemini-2.5-pro').toString().trim(),
+  models?: string[]
 ): Promise<string> {
   const puter = (window as any).puter
   if (!puter?.ai || typeof puter.ai.chat !== 'function') {
     throw new Error('Puter SDK not available or user not authenticated')
   }
-
   const messages = [
     { role: 'system', content: 'You are a helpful assistant. Return only what is asked.' },
     { role: 'user', content: prompt },
   ]
 
-  try {
-    const result = await puter.ai.chat(messages, {
-      model,
-      temperature,
-      max_tokens: maxTokens,
-      stream: false,
-    })
+  const envModels = (process.env.NEXT_PUBLIC_PUTER_MODEL_FALLBACKS || '').split(',').map(s => s.trim()).filter(Boolean)
+  const sequence = [
+    model,
+    ...(models && models.length ? models : (envModels.length ? envModels : ['google/gemini-2.5-flash-lite','google/gemini-2.5-flash','google/gemini-2.5-pro','google/gemini-flash-1.5','google/gemini-pro-1.5']))
+  ].filter((m, i, arr) => arr.indexOf(m) === i)
 
-    // Puter returns a single message object or a shape with .message.content
-    const content: string = (result?.message?.content ?? result?.text ?? '').toString()
-    if (DEBUG) console.log('📝 puterComplete len=', content.length)
-    return content.trim()
-  } catch (err: any) {
-    const msg = err?.message || err?.toString?.() || 'Unknown Puter text error'
-    if (DEBUG) console.error('Puter text error:', err)
-    throw new Error(msg)
+  let lastErr: any = null
+  for (let i = 0; i < sequence.length; i++) {
+    const mName = sequence[i]
+    try {
+      const result = await puter.ai.chat(messages, {
+        model: mName,
+        temperature,
+        max_tokens: maxTokens,
+        stream: false,
+      })
+      const content: string = (result?.message?.content ?? result?.text ?? '').toString()
+      if (DEBUG) console.log(`📝 puterComplete model=${mName} len=${content.length}`)
+      return content.trim()
+    } catch (err: any) {
+      lastErr = err
+      if (DEBUG) console.warn(`Completion model failed (${mName}):`, err?.message || err)
+      continue
+    }
   }
+  const msg = lastErr?.message || lastErr?.toString?.() || 'All completion models failed'
+  throw new Error(msg)
 }
 
 // ---------- Helper: fetch vector sources from server ----------
@@ -513,6 +523,7 @@ export async function streamAdvancedPuterRAG(options: {
   onChunk: (delta: string) => void
   onDone?: (final: string) => void
   model?: string
+  models?: string[]
 }): Promise<{ final: string; sources: VectorSource[] }> {
   const {
     question,
@@ -525,6 +536,7 @@ export async function streamAdvancedPuterRAG(options: {
     onChunk,
     onDone,
     model,
+    models,
   } = options
 
   if (config) advancedPuterRAGClient.updateConfig(config)
@@ -546,6 +558,8 @@ export async function streamAdvancedPuterRAG(options: {
     onChunk,
     onDone,
     model,
+    models,
+    mode: 'advanced',
   })
 
   return { final, sources }
