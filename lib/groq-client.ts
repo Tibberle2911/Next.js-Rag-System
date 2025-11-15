@@ -1,6 +1,7 @@
 /**
- * Groq Integration - LLM Response Generation
- * Uses llama-3.1-8b-instant model (override with GROQ_CHAT_MODEL)
+ * Gemini Integration - LLM Response Generation
+ * Primary: Uses Gemini models (gemini-2.0-flash-lite by default)
+ * Fallback: Groq SDK available but Gemini is preferred
  * Enhanced with rate limiting and token usage monitoring
  */
 
@@ -10,9 +11,9 @@ import { logAIGeneration } from './metrics-logger'
 
 let groqClient: Groq | null = null
 
-// Support optional Gemini provider for text generation (used when USE_GEMINI='true')
-const USE_GEMINI = process.env.USE_GEMINI === 'true'
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY || ''
+// Gemini is the primary provider (USE_GEMINI defaults to true)
+const USE_GEMINI = process.env.USE_GEMINI !== 'false' // Default to Gemini unless explicitly disabled
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''
 
 // Rate limiting configuration
 interface RateLimitConfig {
@@ -46,8 +47,8 @@ export function getGroqClient(): Groq {
   if (!groqClient) {
     const apiKey = process.env.GROQ_API_KEY
     if (!apiKey) {
-      console.error('GROQ_API_KEY environment variable is not set')
-      throw new Error("GROQ_API_KEY not configured. Please add your Groq API key to environment variables.")
+      console.warn('⚠️ GROQ_API_KEY not set. Groq client only used as fallback when Gemini fails.')
+      throw new Error("GROQ_API_KEY not configured. Using Gemini as primary provider.")
     }
     groqClient = new Groq({ apiKey })
   }
@@ -116,16 +117,16 @@ export interface GenerateResponseOptions {
 }
 
 /**
- * Generate response using Groq LLM with comprehensive rate limiting
+ * Generate response using Gemini (primary) with Groq fallback
  */
 export async function generateResponse(options: GenerateResponseOptions): Promise<string> {
-  // Check if Gemini should be used (either via provider option or USE_GEMINI env var)
-  const shouldUseGemini = options.provider === 'gemini' || USE_GEMINI
+  // Gemini is now the primary provider (unless explicitly set to use Groq)
+  const shouldUseGemini = options.provider !== 'groq' && USE_GEMINI
   const started = Date.now()
   let geminiFailed = false
   
   if (shouldUseGemini) {
-    const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY || ''
+    const GEMINI_KEY = process.env.GEMINI_API_KEY || ''
     if (!GEMINI_KEY) {
       console.warn('⚠️ GEMINI_API_KEY not set; falling back to Groq provider')
     } else {

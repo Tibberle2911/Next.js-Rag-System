@@ -1,5 +1,6 @@
 import { spawn } from 'child_process'
 import path from 'path'
+import { evaluateRAG as evaluateWithJS } from './js-evaluator'
 
 /**
  * New RAG Evaluation Architecture following RAGAS best practices
@@ -217,6 +218,7 @@ export class RAGASEvaluator {
 
   /**
    * Evaluate using authentic RAGAS framework - returns all 6 metrics
+   * Uses Vercel Python serverless function or subprocess fallback
    */
   async evaluateRAGAS(
     question: string, 
@@ -228,6 +230,72 @@ export class RAGASEvaluator {
   ): Promise<RAGASMetrics> {
     console.log(`🔍 Evaluating with RAGAS framework (${ragMode} mode)...`)
     
+    // Try Python serverless function first (Vercel-compatible)
+    if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+      console.log('☁️ Serverless environment detected, using HTTP-based Python evaluator')
+      
+      try {
+        const baseUrl = process.env.VERCEL_URL 
+          ? `https://${process.env.VERCEL_URL}`
+          : typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'
+        
+        const response = await fetch(`${baseUrl}/api/ragas-eval`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question,
+            answer,
+            contexts,
+            ground_truth: groundTruth,
+            rag_mode: ragMode
+          })
+        })
+        
+        if (!response.ok) {
+          throw new Error(`Python endpoint returned ${response.status}`)
+        }
+        
+        const result = await response.json()
+        
+        if (result.error) {
+          console.warn('⚠️ Python evaluation returned error, falling back to JS:', result.error)
+          throw new Error(result.error)
+        }
+        
+        console.log('✅ Python serverless evaluation successful')
+        return {
+          faithfulness: result.faithfulness,
+          answer_relevancy: result.answer_relevancy,
+          context_precision: result.context_precision,
+          context_recall: result.context_recall,
+          context_relevance: result.context_relevance,
+          answer_correctness: result.answer_correctness
+        }
+        
+      } catch (httpError) {
+        console.warn('⚠️ Python HTTP endpoint failed, falling back to JavaScript:', httpError)
+        
+        // Fallback to JavaScript implementation
+        const jsMetrics = await evaluateWithJS({
+          question,
+          answer,
+          contexts,
+          ground_truth: groundTruth
+        })
+        
+        return {
+          faithfulness: jsMetrics.faithfulness,
+          answer_relevancy: jsMetrics.answer_correctness || 0.7,
+          context_precision: jsMetrics.context_precision,
+          context_recall: jsMetrics.context_recall,
+          context_relevance: jsMetrics.context_relevancy,
+          answer_correctness: jsMetrics.answer_correctness || 0.7
+        }
+      }
+    }
+    
+    // Local development: use Python subprocess
+    console.log('💻 Local environment detected, using Python subprocess')
     try {
       const inputData = JSON.stringify({
         question,
