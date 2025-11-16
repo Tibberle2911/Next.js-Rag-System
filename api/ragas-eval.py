@@ -10,8 +10,7 @@ try:
     from ragas import evaluate
     from ragas.metrics import faithfulness, answer_relevancy, context_precision, context_recall, answer_correctness
     from ragas.llms import LangchainLLMWrapper
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    from langchain_huggingface import HuggingFaceEmbeddings
+    from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
     from datasets import Dataset
     import warnings
     warnings.filterwarnings('ignore')
@@ -78,9 +77,10 @@ class handler(BaseHTTPRequestHandler):
             if not gemini_api_key:
                 raise ValueError('GEMINI_API_KEY environment variable not set')
             
-            # Initialize embeddings (reused for all metrics)
-            embeddings = HuggingFaceEmbeddings(
-                model_name="sentence-transformers/all-MiniLM-L6-v2"
+            # Initialize Google embeddings (lightweight, no large ML models needed)
+            embeddings = GoogleGenerativeAIEmbeddings(
+                model="models/embedding-004",
+                google_api_key=gemini_api_key
             )
             
             # Create dataset for RAGAS
