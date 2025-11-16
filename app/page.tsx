@@ -171,6 +171,24 @@ export default function Page() {
         }
         // Provide actionable guidance for common permission/usage errors
         const lower = errMsg.toLowerCase()
+        const isRateLimit = lower.includes('rate') || lower.includes('quota') || lower.includes('429')
+        const reason = isRateLimit ? 'rate_limit' : lower.includes('permission') ? 'permission_denied' : 'error'
+        
+        // Log Puter→Gemini fallback to database
+        fetch('/api/metrics/client', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            kind: 'fallback',
+            from: 'puter',
+            to: 'gemini',
+            reason,
+            query: question.substring(0, 512),
+            originalStatus: isRateLimit ? 429 : 500,
+            message: errMsg.substring(0, 256)
+          })
+        }).catch(e => console.warn('Failed to log Puter→Gemini fallback:', e))
+        
         if (lower.includes('permission denied') || lower.includes('usage-limited') || lower.includes('quota') || lower.includes('rate')) {
           errMsg += ' — This may be due to account usage limits. Try logging out (top right) and signing in with a different Puter account.'
         }

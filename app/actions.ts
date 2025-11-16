@@ -4,7 +4,7 @@ import { queryRAG as queryBasicRAG, queryVectorDatabase, sanitizeText, isPIIRequ
 import { generateResponse } from "@/lib/groq-client"
 import { queryAdvancedRAG, AdvancedRAGConfig, DEFAULT_ADVANCED_CONFIG } from "@/lib/advanced-rag-client"
 import { getCanonicalName } from "@/lib/canonical-name"
-import { logAIGeneration } from "@/lib/metrics-logger"
+import { logAIGeneration, logFallback } from "@/lib/metrics-logger"
 
 export type RAGMode = "basic" | "advanced"
 
@@ -74,6 +74,16 @@ export async function ragQuery(
       const advancedResult = await queryAdvancedRAG(question, advancedConfig, getCanonicalName())
       
       if (advancedResult.error) {
+        // Log fallback event when advanced mode encounters error
+        logFallback({
+          from: 'advanced',
+          to: 'error',
+          reason: 'advanced_rag_error',
+          query: question.substring(0, 512),
+          originalStatus: 500,
+          message: advancedResult.error.substring(0, 256)
+        }).catch(()=>{})
+        
         return {
           answer: "",
           sources: [],
@@ -168,6 +178,9 @@ export async function ragQuery(
     }
   } catch (error) {
     console.error("RAG query error:", error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    
+    // Log the error
     logAIGeneration({
       status: 500,
       ok: false,
@@ -175,9 +188,22 @@ export async function ragQuery(
       provider: 'pipeline',
       query: question.substring(0,160),
       mode,
-      errorMessage: error instanceof Error ? error.message : String(error),
+      errorMessage,
       fallbackUsed: false
     }).catch(()=>{})
+    
+    // If advanced mode failed, log fallback event (even though we're returning error)
+    if (mode === 'advanced') {
+      logFallback({
+        from: 'advanced',
+        to: 'error',
+        reason: 'error',
+        query: question.substring(0, 512),
+        originalStatus: 500,
+        message: errorMessage.substring(0, 256)
+      }).catch(()=>{})
+    }
+    
     return {
       answer: "",
       sources: [],

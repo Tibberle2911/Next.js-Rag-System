@@ -203,21 +203,138 @@ export default function LiveMetrics() {
         </Card>
       </div>
 
-      {/* Recent events table (compact) */}
+      {/* Fallback Analysis Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Fallback Analysis</CardTitle>
+          <CardDescription>Breakdown of fallback events by type and reason</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Fallback by Type */}
+            <div className="w-full h-[280px]">
+              <h3 className="text-sm font-medium mb-4">Fallbacks by Transition</h3>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={(() => {
+                  const typeMap = new Map<string, number>()
+                  fallbacks.forEach(f => {
+                    const key = `${f.from_mode}→${f.to_mode}`
+                    typeMap.set(key, (typeMap.get(key) || 0) + 1)
+                  })
+                  return Array.from(typeMap.entries())
+                    .map(([transition, count]) => ({ transition, count }))
+                    .sort((a, b) => b.count - a.count)
+                    .slice(0, 10)
+                })()}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="transition" angle={-45} textAnchor="end" height={80} />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#f59e0b" name="Occurrences" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            
+            {/* Fallback by Reason */}
+            <div className="w-full h-[280px]">
+              <h3 className="text-sm font-medium mb-4">Fallbacks by Reason</h3>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Tooltip />
+                  <Legend />
+                  <Pie
+                    dataKey="value"
+                    data={(() => {
+                      const reasonMap = new Map<string, number>()
+                      fallbacks.forEach(f => {
+                        reasonMap.set(f.reason, (reasonMap.get(f.reason) || 0) + 1)
+                      })
+                      const colors = ['#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#8b5cf6']
+                      return Array.from(reasonMap.entries())
+                        .map(([reason, count], idx) => ({ 
+                          name: reason, 
+                          value: count,
+                          fill: colors[idx % colors.length]
+                        }))
+                        .sort((a, b) => b.value - a.value)
+                    })()}
+                    cx="50%" cy="50%" outerRadius={80} label
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          
+          {/* Fallback Details Table */}
+          <div className="mt-6">
+            <h3 className="text-sm font-medium mb-3">Recent Fallback Events (Last 20)</h3>
+            <div className="overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="text-left text-muted-foreground">
+                  <tr>
+                    <th className="p-2">Service</th>
+                    <th className="p-2">Transition</th>
+                    <th className="p-2">Reason</th>
+                    <th className="p-2">Status</th>
+                    <th className="p-2">Message</th>
+                    <th className="p-2">Query</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fallbacks.slice(0, 20).map(f => (
+                    <tr key={f.id} className="border-t border-border/50">
+                      <td className="p-2">{f.service}</td>
+                      <td className="p-2">
+                        <Badge variant="outline" className="font-mono text-xs">
+                          {f.from_mode} → {f.to_mode}
+                        </Badge>
+                      </td>
+                      <td className="p-2">
+                        <Badge 
+                          variant="outline" 
+                          className={
+                            f.reason === 'rate_limit' ? 'bg-red-500/10 border-red-500/30' :
+                            f.reason === 'error' ? 'bg-orange-500/10 border-orange-500/30' :
+                            'bg-blue-500/10 border-blue-500/30'
+                          }
+                        >
+                          {f.reason}
+                        </Badge>
+                      </td>
+                      <td className="p-2">{f.original_status || '-'}</td>
+                      <td className="p-2 truncate max-w-[200px]" title={f.message || ''}>{f.message || '-'}</td>
+                      <td className="p-2 truncate max-w-[200px]" title={f.query || ''}>{f.query || '-'}</td>
+                    </tr>
+                  ))}
+                  {fallbacks.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="p-4 text-center text-muted-foreground">
+                        No fallback events recorded yet
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Recent events table (compact) - Shows request and fallback events merged */}
       <Card>
         <CardHeader>
           <CardTitle>Recent Events</CardTitle>
-          <CardDescription>Most recent 50 events</CardDescription>
+          <CardDescription>Most recent 50 events (requests & fallbacks)</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-auto">
             <table className="w-full text-sm">
               <thead className="text-left text-muted-foreground">
                 <tr>
-                  <th className="p-2">Time</th>
                   <th className="p-2">Service</th>
-                  <th className="p-2">Kind</th>
-                  <th className="p-2">Status</th>
+                  <th className="p-2">Event Type</th>
+                  <th className="p-2">Status/Reason</th>
+                  <th className="p-2">Fallback Details</th>
                   <th className="p-2">OK</th>
                   <th className="p-2">Latency</th>
                   <th className="p-2">Mode</th>
@@ -225,18 +342,50 @@ export default function LiveMetrics() {
                 </tr>
               </thead>
               <tbody>
-                {requests.slice(0, 50).map(r => (
-                  <tr key={r.id} className="border-t border-border/50">
-                    <td className="p-2 whitespace-nowrap" suppressHydrationWarning>{mounted ? new Date(r.ts).toLocaleTimeString() : '—'}</td>
-                    <td className="p-2">{r.service}</td>
-                    <td className="p-2">{r.kind}</td>
-                    <td className="p-2">{r.status}</td>
-                    <td className="p-2">{r.ok ? '✓' : '✗'}</td>
-                    <td className="p-2">{typeof r.duration_ms === 'number' ? `${r.duration_ms}ms` : '-'}</td>
-                    <td className="p-2">{r.mode || '-'}</td>
-                    <td className="p-2 truncate max-w-[280px]" title={r.query || ''}>{r.query || ''}</td>
-                  </tr>
-                ))}
+                {/* Merge and display both requests and fallbacks */}
+                {[
+                  ...requests.slice(0, 25).map(r => ({ ...r, type: 'request' as const })),
+                  ...fallbacks.slice(0, 25).map(f => ({ ...f, type: 'fallback' as const }))
+                ]
+                  .sort((a, b) => b.ts - a.ts)
+                  .slice(0, 50)
+                  .map((event, idx) => {
+                    if (event.type === 'fallback') {
+                      const fb = event as FallbackRow & { type: 'fallback' }
+                      return (
+                        <tr key={`fb-${fb.id}`} className="border-t border-border/50 bg-yellow-500/5">
+                          <td className="p-2">{fb.service}</td>
+                          <td className="p-2">
+                            <Badge variant="outline" className="bg-yellow-500/10 border-yellow-500/30">Fallback</Badge>
+                          </td>
+                          <td className="p-2">{fb.reason}</td>
+                          <td className="p-2">
+                            <span className="font-mono text-xs">
+                              {fb.from_mode} → {fb.to_mode}
+                            </span>
+                          </td>
+                          <td className="p-2">-</td>
+                          <td className="p-2">-</td>
+                          <td className="p-2">{fb.from_mode || '-'}</td>
+                          <td className="p-2 truncate max-w-[280px]" title={fb.query || fb.message || ''}>{fb.query || fb.message || ''}</td>
+                        </tr>
+                      )
+                    } else {
+                      const r = event as RequestRow & { type: 'request' }
+                      return (
+                        <tr key={`req-${r.id}`} className="border-t border-border/50">
+                          <td className="p-2">{r.service}</td>
+                          <td className="p-2">{r.kind}</td>
+                          <td className="p-2">{r.status}</td>
+                          <td className="p-2">{r.fallback_used ? <Badge variant="outline" className="bg-orange-500/10 border-orange-500/30 text-xs">Used</Badge> : '-'}</td>
+                          <td className="p-2">{r.ok ? '✓' : '✗'}</td>
+                          <td className="p-2">{typeof r.duration_ms === 'number' ? `${r.duration_ms}ms` : '-'}</td>
+                          <td className="p-2">{r.mode || '-'}</td>
+                          <td className="p-2 truncate max-w-[280px]" title={r.query || ''}>{r.query || ''}</td>
+                        </tr>
+                      )
+                    }
+                  })}
               </tbody>
             </table>
           </div>

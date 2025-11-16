@@ -16,3 +16,10 @@ evaluation/__pycache__/
 .DS_Store
 .turbo
 .next/cache
+
+# Exclude Python evaluation APIs from Vercel deployment (too large)
+# Use JavaScript fallback evaluators instead
+api/*.py
+python_evaluators/
+evaluation/
+requirements.txt

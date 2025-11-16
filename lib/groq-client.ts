@@ -7,7 +7,7 @@
 
 import Groq from "groq-sdk"
 import { GoogleGenAI } from "@google/genai"
-import { logAIGeneration } from './metrics-logger'
+import { logAIGeneration, logFallback } from './metrics-logger'
 
 let groqClient: Groq | null = null
 
@@ -159,6 +159,16 @@ export async function generateResponse(options: GenerateResponseOptions): Promis
           mode: options.provider === 'gemini' ? 'advanced' : undefined,
           errorMessage: message,
           fallbackUsed: true
+        }).catch(()=>{})
+        
+        // Log fallback event to database
+        logFallback({
+          from: 'gemini',
+          to: 'groq',
+          reason: isRateLimit ? 'rate_limit' : 'error',
+          query: options.question.substring(0, 512),
+          originalStatus: isRateLimit ? 429 : 500,
+          message: message.substring(0, 256)
         }).catch(()=>{})
       }
     }
