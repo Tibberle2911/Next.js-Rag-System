@@ -9,9 +9,11 @@
 
 // Ordered model fallback list. First working model is used.
 // Can be overridden by NEXT_PUBLIC_PUTER_MODEL_FALLBACKS (comma-separated)
+// Valid Puter models: https://puter.com/puterai/chat/models
 export const DEFAULT_PUTER_MODEL_FALLBACKS: string[] = [
-  'google/gemini-2.5-pro',
-  'openrouter:google/gemini-2.5-flash'
+  'openrouter/google/gemini-flash-1.5',
+  'openai/gpt-4o-mini',
+  'openai/gpt-3.5-turbo'
 ]
 
 const DEBUG = process.env.NEXT_PUBLIC_DEBUG === 'true' || (typeof window !== 'undefined' && (window as any).__PUTER_DEBUG__ === true)

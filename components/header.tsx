@@ -20,12 +20,12 @@ export function Header() {
       icon: MessageSquare,
       description: 'AI-powered conversation interface'
     },
-    {
-      href: '/evaluation',
-      label: 'Evaluation',
-      icon: BarChart3,
-      description: 'Performance metrics and analysis'
-    },
+    // {
+    //   href: '/evaluation',
+    //   label: 'Evaluation',
+    //   icon: BarChart3,
+    //   description: 'Performance metrics and analysis'
+    // },
     {
       href: '/monitoring',
       label: 'Monitoring',

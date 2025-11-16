@@ -79,8 +79,8 @@ async function runRagWithFallback(query: string, requestedMode?: 'basic' | 'adva
     if (isRateLimitError(basicErr)) {
       if (advancedError) {
         logFallback({
-          from: 'advanced',
-          to: 'basic',
+          from: 'mcp_advanced_rag',
+          to: 'mcp_basic_rag',
           reason: 'rate_limit',
           query,
           originalStatus: 429,
@@ -100,8 +100,8 @@ async function runRagWithFallback(query: string, requestedMode?: 'basic' | 'adva
     }
     if (wantAdvanced && advancedError) {
       logFallback({
-        from: 'advanced',
-        to: 'basic',
+        from: 'mcp_advanced_rag',
+        to: 'mcp_basic_rag',
         reason: isRateLimitError(advancedError) ? 'rate_limit' : 'error',
         query,
         originalStatus: isRateLimitError(advancedError) ? 429 : 500,

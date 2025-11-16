@@ -69,31 +69,67 @@ export async function ragQuery(
 
   try {
     if (mode === "advanced") {
-      // Use advanced RAG processing
+      // Use advanced RAG processing with fallback to basic
       const started = Date.now()
-      const advancedResult = await queryAdvancedRAG(question, advancedConfig, getCanonicalName())
+      let advancedResult
+      let usedBasicFallback = false
       
-      if (advancedResult.error) {
-        // Log fallback event when advanced mode encounters error
+      try {
+        advancedResult = await queryAdvancedRAG(question, advancedConfig, getCanonicalName())
+        
+        if (advancedResult.error) {
+          throw new Error(advancedResult.error)
+        }
+      } catch (advancedError) {
+        // Advanced RAG failed, fallback to basic RAG
+        console.warn('⚠️ Advanced RAG failed, falling back to basic RAG:', advancedError)
+        const errorMessage = advancedError instanceof Error ? advancedError.message : String(advancedError)
+        const isRateLimit = /429|rate[_\s-]?limit|quota/i.test(errorMessage)
+        
+        // Log fallback event
         logFallback({
-          from: 'advanced',
-          to: 'error',
-          reason: 'advanced_rag_error',
+          from: 'advanced_rag',
+          to: 'basic_rag',
+          reason: isRateLimit ? 'rate_limit' : 'error',
           query: question.substring(0, 512),
-          originalStatus: 500,
-          message: advancedResult.error.substring(0, 256)
+          originalStatus: isRateLimit ? 429 : 500,
+          message: errorMessage.substring(0, 256)
+        }).catch(()=>{})
+        
+        // Execute basic RAG as fallback
+        usedBasicFallback = true
+        const basicAnswer = await queryBasicRAG(question, authToken)
+        const basicSources = await queryVectorDatabase(question, 8)
+        
+        logAIGeneration({
+          status: 200,
+          ok: true,
+          durationMs: Date.now() - started,
+          provider: 'pipeline',
+          query: question.substring(0,160),
+          mode: 'basic',
+          fallbackUsed: true
         }).catch(()=>{})
         
         return {
-          answer: "",
-          sources: [],
+          answer: limitWords(sanitizeText(basicAnswer), 50, 250),
+          sources: basicSources.map((r) => ({
+            id: r.id,
+            title: r.title,
+            content: sanitizeText(r.content),
+            score: r.score,
+            category: r.category,
+          })),
           metadata: {
-            mode: "advanced",
-            techniquesUsed: advancedResult.techniquesUsed,
-            processingTime: advancedResult.metadata.processingTime
-          },
-          error: advancedResult.error
+            mode: "basic",
+            techniquesUsed: ['Basic RAG (Advanced fallback)'],
+            processingTime: Date.now() - started
+          }
         }
+      }
+      
+      if (!advancedResult) {
+        throw new Error('Advanced RAG returned no result')
       }
 
       // Limit response length and sanitize
