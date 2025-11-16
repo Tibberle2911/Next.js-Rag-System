@@ -11,7 +11,7 @@
 // Can be overridden by NEXT_PUBLIC_PUTER_MODEL_FALLBACKS (comma-separated)
 export const DEFAULT_PUTER_MODEL_FALLBACKS: string[] = [
   'google/gemini-2.5-pro',
-  'google/gemini-flash-1.5'
+  'openrouter:google/gemini-2.5-flash'
 ]
 
 const DEBUG = process.env.NEXT_PUBLIC_DEBUG === 'true' || (typeof window !== 'undefined' && (window as any).__PUTER_DEBUG__ === true)

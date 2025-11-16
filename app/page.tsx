@@ -172,7 +172,10 @@ export default function Page() {
         // Provide actionable guidance for common permission/usage errors
         const lower = errMsg.toLowerCase()
         const isRateLimit = lower.includes('rate') || lower.includes('quota') || lower.includes('429')
-        const reason = isRateLimit ? 'rate_limit' : lower.includes('permission') ? 'permission_denied' : 'error'
+        const isInvalidModel = lower.includes('field `model` is invalid') || lower.includes('expected a valid model')
+        const reason = isRateLimit ? 'rate_limit' : lower.includes('permission') ? 'permission_denied' : isInvalidModel ? 'invalid_model' : 'error'
+        
+        console.warn('⚠️ Puter failed, falling back to Gemini via /api/chat...')
         
         // Log Puter→Gemini fallback to database
         fetch('/api/metrics/client', {
@@ -189,16 +192,41 @@ export default function Page() {
           })
         }).catch(e => console.warn('Failed to log Puter→Gemini fallback:', e))
         
-        if (lower.includes('permission denied') || lower.includes('usage-limited') || lower.includes('quota') || lower.includes('rate')) {
-          errMsg += ' — This may be due to account usage limits. Try logging out (top right) and signing in with a different Puter account.'
+        // Attempt fallback to server-side Gemini pipeline
+        try {
+          usedFallback = true
+          const resp = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: question, mode: ragMode })
+          })
+          
+          if (!resp.ok) {
+            throw new Error(`Fallback API returned ${resp.status}`)
+          }
+          
+          const data = await resp.json()
+          const fallbackText = data.message || 'Fallback pipeline produced no answer.'
+          setMessages((prev) => prev.map(m => m.id === assistantId ? { 
+            ...m, 
+            content: fallbackText + '\n\n🔄 [Puter unavailable - used Gemini fallback]' 
+          } : m))
+          setSources(data.sources || [])
+          console.log('✅ Gemini fallback succeeded')
+        } catch (fallbackErr) {
+          console.error('❌ Gemini fallback also failed:', fallbackErr)
+          const fallbackErrMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
+          
+          if (lower.includes('permission denied') || lower.includes('usage-limited') || lower.includes('quota') || lower.includes('rate')) {
+            errMsg += ' — This may be due to account usage limits. Try logging out (top right) and signing in with a different Puter account.'
+          }
+          
+          setMessages((prev) => prev.map(m => (
+            m.id === assistantId
+              ? { ...m, content: `Puter AI failed: ${errMsg}\n\nGemini fallback also failed: ${fallbackErrMsg}\n\nPlease check browser console.` }
+              : m
+          )))
         }
-        setMessages((prev) => prev.map(m => (
-          m.id === assistantId
-            ? { ...m, content: usedFallback
-                ? (m.content && m.content.length ? m.content : 'Fallback completed.')
-                : `Puter AI generation failed: ${errMsg}. Please check browser console.` }
-            : m
-        )))
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "An unexpected error occurred"
