@@ -19,4 +19,5 @@ evaluation/__pycache__/
 
 # Exclude Python evaluation APIs from Vercel deployment (too large)
 # Use JavaScript fallback evaluators instead
+api/langchain-eval.py
 python_evaluators/
