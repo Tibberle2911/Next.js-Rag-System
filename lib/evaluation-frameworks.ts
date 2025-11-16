@@ -275,6 +275,20 @@ export class RAGASEvaluator {
       } catch (httpError) {
         console.warn('⚠️ Python HTTP endpoint failed, falling back to JavaScript:', httpError)
         
+        // Log evaluation fallback for monitoring
+        try {
+          const { logFallback } = await import('./metrics-logger')
+          await logFallback({
+            from_mode: 'python_ragas',
+            to_mode: 'javascript_evaluator',
+            reason: httpError instanceof Error ? httpError.message : 'Python endpoint unavailable',
+            query: question,
+            status: 'success'
+          })
+        } catch (logError) {
+          console.error('Failed to log evaluation fallback:', logError)
+        }
+        
         // Fallback to JavaScript implementation
         const jsMetrics = await evaluateWithJS({
           question,
