@@ -22,3 +22,9 @@ evaluation/__pycache__/
 api/*.py
 python_evaluators/*
 evaluation/*
+
+# Exclude evaluation pages and API routes from Vercel deployment
+app/evaluation/*
+app/api/evaluation/*
+lib/evaluation-frameworks.ts
+lib/js-evaluator.ts
