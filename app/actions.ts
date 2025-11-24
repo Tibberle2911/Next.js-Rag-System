@@ -170,7 +170,7 @@ export async function ragQuery(
       const answer = await queryBasicRAG(question, authToken)
       
       // Also get sources for UI display
-      let results = await queryVectorDatabase(question, 8)
+      let results = await queryVectorDatabase(question, 15) // Increased from 8 for richer context
 
       // Prioritize STAR/behavioral results if question is behavioral
       if (isBehavioralQuery(question)) {

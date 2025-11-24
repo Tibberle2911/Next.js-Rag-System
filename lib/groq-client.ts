@@ -85,16 +85,27 @@ export function formatResponse(text: string): string {
     content = content.replace(regex, "")
   }
 
-  // Remove generic meta disclaimers
+  // Remove generic meta disclaimers and conversational fluff
   const metaPrefixes = [
     /^Here\s+are\s+the\s+answers/i,
     /^In\s+the\s+format\s+requested/i,
     /^Sure[,\s]/i,
     /^Certainly[,\s]/i,
+    /^Okay,\s+let's\s+craft\s+a\s+response.*?[:.]\s*/i,
+    /^Here's\s+how\s+I['d]\s+approach.*?[:.]\s*/i,
+    /^Let\s+me\s+.*?[:.]\s*/i,
   ]
 
   for (const regex of metaPrefixes) {
     content = content.replace(regex, "")
+  }
+
+  // Remove quoted content wrappers like "Here's... : "actual content""
+  // Match patterns: <prefix>: "content" or <prefix>: 'content'
+  const quotedPattern = /^[^"']*?:\s*["'](.+)["']\s*$/
+  const quotedMatch = content.match(quotedPattern)
+  if (quotedMatch) {
+    content = quotedMatch[1].trim()
   }
 
   // Collapse multiple blank lines
@@ -192,32 +203,64 @@ export async function generateResponse(options: GenerateResponseOptions): Promis
 }
 
 /**
- * Gemini text generation via Google's Generative API (simple wrapper)
- * This runs when `USE_GEMINI=true` and reads the API key from `GEMINI_API_KEY` or `GROQ_API_KEY`.
- * Note: This implementation uses the HTTP REST endpoint and a simple prompt-based generate call.
+ * Gemini text generation via Google's Generative API
+ * Uses proper systemInstruction parameter for better AI model behavior
  */
 async function geminiGenerate(options: GenerateResponseOptions, apiKey: string): Promise<string> {
-  const model = process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest'
+  const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash-lite'
 
-  // Build a compact prompt following existing system guidance
-  const systemInstructions = `You are an AI digital twin responding in first person. Use only the provided context unless general knowledge is trivial. Do not provide personal contact or sensitive information. Write concise, recruiter-ready answers. Keep answers between 50 and 200 words. CRITICAL RULES: (1) Use ONLY first-person singular ("I", "my", "me") - NEVER "we", "our", "us". (2) NO explicit STAR markers like "The result?", "My task was", "The situation was" - create natural flowing responses instead. (3) If context contains "My name is [Your Name]" or similar, extract and use the ACTUAL name naturally (e.g., "My name is John" → "I'm John").`
-  const promptText = `${systemInstructions}\n\nContext:\n${options.context}\n\nQuestion: ${options.question}\n\nProvide a helpful, professional, conversational response:`
+  // Build system instruction for the AI model
+  const systemInstructionText = `You are Virtual Tylor responding in first person (representing for Tylor - focus on IT Experiences/Skills/Projects, Using Hospitality industry experiences for advantages). Use only the provided context unless general knowledge is trivial. Do not provide personal contact or sensitive information. Write concise, recruiter-ready answers. Keep answers between 50 and 500 words.
+
+IMPORTANT: You MUST respond ONLY with the direct answer. Do NOT include ANY meta-commentary, introductions, or explanations about what you're doing. Start your response immediately with the actual content.
+
+CRITICAL RULES:
+1. Use ONLY first-person singular ("I", "my", "me") - NEVER "we", "our", "us"
+2. NO explicit STAR markers like "The result?", "My task was", "The situation was" - create natural flowing responses instead
+3. If context contains "My name is [Your Name]" or similar, extract and use the ACTUAL name naturally (e.g., "My name is John" → "I'm John")
+4. Replace any placeholder text like "[Your Name]", "[Salary Range]" with actual values from context
+5. Maintain natural, conversational interview tone
+6. Focus on concrete examples and quantifiable achievements
+7. NEVER include meta-commentary like "Here's how I'd approach...", "Okay, let's craft...", "Sure, here's...", etc.
+8. Respond DIRECTLY with the answer - do NOT prefix with explanations of what you're doing
+9. Do NOT wrap your response in quotes or explain your approach${options.canonicalName ? `\n10. Always use the correct name: ${options.canonicalName}` : ''}`
+
+  // Build user prompt with context and question
+  const userPrompt = `Context:
+${options.context}
+
+Question: ${options.question}
+
+Answer directly (NO meta-commentary, NO "Here's...", NO "Okay...", NO "Let's..."):`
 
   try {
     const client = new GoogleGenAI({ apiKey })
-    const modelName = model
     
-    // Use the SDK's generateContent API with proper parameters
+    // Generate content with system instruction and configuration
     const resp: any = await client.models.generateContent({
-      model: modelName,
-      contents: promptText
-    })
+      model,
+      systemInstruction: {
+        parts: [{ text: systemInstructionText }]
+      },
+      contents: userPrompt,
+      temperature: 0.7,
+      maxOutputTokens: 3000, // Increased for richer responses
+      topP: 0.95,
+      topK: 40
+    } as any)
 
-    // Extract text from response
-    const text = resp?.text || resp?.output?.[0]?.content || resp?.candidates?.[0]?.content || ''
-    return formatResponse(String(text || ''))
+    // Extract text from response (handle multiple possible response formats)
+    let text = resp?.text || resp?.output?.[0]?.content || resp?.candidates?.[0]?.content || ""
+    text = text.trim()
+    
+    // Remove surrounding quotes if present
+    if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+      text = text.slice(1, -1)
+    }
+    
+    return formatResponse(text)
   } catch (err: any) {
-    console.error('❌ Gemini generation failed (SDK):', err)
+    console.error('❌ Gemini generation failed:', err)
     throw err
   }
 }

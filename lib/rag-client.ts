@@ -202,14 +202,22 @@ export async function queryVectorDatabase(question: string, topK = 3): Promise<V
         const data = await response.json()
         const results: VectorSearchResult[] = (data.result || []).map((r: any) => ({
           id: r.id || "",
-          title: r.metadata?.title || "Information", 
-          content: r.metadata?.content || "",
+          title: r.metadata?.title || r.metadata?.topic || "Information", 
+          content: r.data || r.metadata?.content || "", // Check r.data first (raw vector data), then r.metadata.content
           score: r.score || 0,
-          category: r.metadata?.category || "",
+          category: r.metadata?.category || r.metadata?.type || "",
           tags: r.metadata?.tags || [],
         }))
         
-        console.log(`Found ${results.length} vector matches`)
+        console.log(`Found ${results.length} vector matches for query: "${question}"`)
+        if (results.length > 0) {
+          console.log('Top 3 results:')
+          results.slice(0, 3).forEach((r, i) => {
+            console.log(`  ${i + 1}. [${r.score.toFixed(3)}] ${r.id} - ${r.title} (${r.category})`)
+            console.log(`     Content preview: "${r.content.substring(0, 100)}..."`)
+          })
+        }
+        
         await logVectorQuery({
           status: 200,
           ok: true,
